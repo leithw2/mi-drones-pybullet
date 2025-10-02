@@ -28,7 +28,7 @@ class BaseAviary(gym.Env):
                  neighbourhood_radius: float=np.inf,
                  initial_xyzs=None,
                  initial_rpys=None,
-                 physics: Physics=Physics.PYB,
+                 physics: Physics=Physics.PYB_WIND,
                  pyb_freq: int = 240,
                  ctrl_freq: int = 240,
                  gui=False,
@@ -214,6 +214,15 @@ class BaseAviary(gym.Env):
         self._updateAndStoreKinematicInformation()
         #### Start video recording #################################
         self._startVideoRecording()
+        
+        wind_type="gust"
+        wind_mean=[0, 0, 0]
+        wind_var=0.5
+        self.wind_type = wind_type
+        self.wind_mean = np.array(wind_mean)
+        self.wind_var = wind_var
+        self.wind_force = np.zeros(3)
+        self.step_count = 0
     
     ################################################################################
 
@@ -365,6 +374,10 @@ class BaseAviary(gym.Env):
                     self._groundEffect(clipped_action[i, :], i)
                     self._drag(self.last_clipped_action[i, :], i)
                     self._downwash(i)
+                elif self.PHYSICS == Physics.PYB_WIND:
+                    self._physics(clipped_action[i, :], i)
+                    wind_force = self._calculate_wind_force()
+                    self._wind(wind_force)
             #### PyBullet computes the new state, unless Physics.DYN ###
             if self.PHYSICS != Physics.DYN:
                 p.stepSimulation(physicsClientId=self.CLIENT)
@@ -710,8 +723,43 @@ class BaseAviary(gym.Env):
                               physicsClientId=self.CLIENT
                               )
 
+        """
+        wind_type: "constant", "gust", "random"
+        wind_mean: dirección media del viento [vx, vy, vz]
+        wind_var: variabilidad del viento
+        """
+          
+    def _calculate_wind_force(self):
+        """Calcula la fuerza del viento para este step"""
+        if self.wind_type == "constant":
+            self.wind_force = self.wind_mean
+            
+        elif self.wind_type == "random":
+            # Viento que varía suavemente
+            noise = np.random.normal(0, self.wind_var, 3)
+            self.wind_force = self.wind_mean + noise
+            
+        elif self.wind_type == "gust":
+            # Ráfagas intermitentes de viento
+            self.step_count += 1
+            if self.step_count % 200 == 0:  # Cada 200 steps, una ráfaga
+                gust_strength = np.random.uniform(0.005, 0.02)  # Fuerza de la ráfaga
+                gust_direction = np.random.uniform(-1, 1, 3)
+                gust_direction = gust_direction / np.linalg.norm(gust_direction)
+                self.wind_force = gust_strength * gust_direction
+            elif self.step_count % 250 == 0:  # Terminar la ráfaga
+                self.wind_force = np.zeros(3)
+        #print(self.wind_force)
+        return self.wind_force
     ################################################################################
-
+    def _wind(self, wind_force):
+         p.applyExternalForce(self.DRONE_IDS[0],
+                -1,  # -1 = centro de masa
+                forceObj=wind_force,
+                posObj=[0, 0, 0],
+                flags=p.LINK_FRAME,
+                physicsClientId=self.CLIENT
+            )
     def _groundEffect(self,
                       rpm,
                       nth_drone
@@ -843,11 +891,8 @@ class BaseAviary(gym.Env):
         if self.DRONE_MODEL == DroneModel.RACE:
             z_torques = -z_torques
         z_torque = (-z_torques[0] + z_torques[1] - z_torques[2] + z_torques[3])
-        if self.DRONE_MODEL==DroneModel.RACE:
+        if self.DRONE_MODEL==DroneModel.CF2X or self.DRONE_MODEL==DroneModel.RACE:
             x_torque = (forces[0] + forces[1] - forces[2] - forces[3]) * (self.L/np.sqrt(2))
-            y_torque = (- forces[0] + forces[1] + forces[2] - forces[3]) * (self.L/np.sqrt(2))
-        elif self.DRONE_MODEL==DroneModel.CF2X:
-            x_torque = - (forces[0] + forces[1] - forces[2] - forces[3]) * (self.L/np.sqrt(2))
             y_torque = (- forces[0] + forces[1] + forces[2] - forces[3]) * (self.L/np.sqrt(2))
         elif self.DRONE_MODEL==DroneModel.CF2P:
             x_torque = (forces[1] - forces[3]) * self.L

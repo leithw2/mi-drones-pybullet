@@ -19,7 +19,7 @@ class Physics(Enum):
     PYB_DRAG = "pyb_drag"               # PyBullet physics update with drag
     PYB_DW = "pyb_dw"                   # PyBullet physics update with downwash
     PYB_GND_DRAG_DW = "pyb_gnd_drag_dw" # PyBullet physics update with ground effect, drag, and downwash
-
+    PYB_WIND = "pyb_wind"               # PyBullet physics update with wind effects
 ################################################################################
 
 class ImageType(Enum):
