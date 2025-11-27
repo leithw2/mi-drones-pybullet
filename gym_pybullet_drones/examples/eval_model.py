@@ -18,7 +18,8 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
         test_env = HoverAviary(gui=gui,
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
-                               record=record_video)
+                               record=record_video, 
+                               random_targets=True)
     else:
         test_env = MultiHoverAviary(gui=gui,
                                     num_drones=DEFAULT_AGENTS,
