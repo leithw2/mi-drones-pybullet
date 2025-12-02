@@ -83,9 +83,9 @@ DEFAULT_OBS = ObservationType('kin') # 'kin' or 'rgb'
 DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
-physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'save-11.26.2025_22.06.08')
-CONTINUE_FROM = None # None or path to saved model folder
+physics=Physics.PYB_WIND # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'save-12.01.2025_22.22.59')
+#CONTINUE_FROM = None # None or path to saved model folder
 
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, continue_from=None):
@@ -143,10 +143,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                     batch_size=128,
                     n_epochs=20,        # Tamaño de mini-lote
                     #learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
-                    learning_rate=0.001,
+                    learning_rate=0.002,
                     policy_kwargs=dict(
-                    net_arch=[dict(pi=[32, 32], vf=[32, 32])],
-                    activation_fn=torch.nn.Tanh,  # Suaviza salidas
+                        net_arch=[dict(pi=[32, 32], vf=[32, 32])],
+                        activation_fn=torch.nn.Tanh,  # Suaviza salidas
                     ),
                     ent_coef=0.015,
                     clip_range=0.3,
