@@ -59,10 +59,12 @@ import argparse
 import gymnasium as gym
 import numpy as np
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
+from stable_baselines3.common.monitor import Monitor
 
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -74,6 +76,91 @@ from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType
 
 print(torch.cuda.is_available())
+
+# Callback para loggear en TensorBoard: gráfico del modelo, histogramas de parámetros y LR
+class TensorboardCallback(BaseCallback):
+    def __init__(self, tb_log_dir, log_freq=2000, verbose=0):
+        super().__init__(verbose)
+        self.tb_log_dir = tb_log_dir
+        self.log_freq = log_freq
+        self.writer = None
+
+    def _on_training_start(self) -> None:
+        try:
+            self.writer = SummaryWriter(self.tb_log_dir)
+            # Intentar agregar el grafo del modelo (puede fallar con algunas políticas)
+            obs_space = None
+            try:
+                obs_space = self.training_env.observation_space.shape
+            except Exception:
+                # VecEnv/Wrapper pueden requerir acceder al env interno
+                try:
+                    obs_space = self.training_env.envs[0].observation_space.shape
+                except Exception:
+                    obs_space = None
+            if obs_space is not None:
+                # Obtener shape de observación y tensor dummy
+                obs_shape = obs_space
+                dummy = torch.zeros(1, *obs_shape)
+                dummy_flat = dummy.view(1, -1)   # Flatten si el extractor es FlattenExtractor
+
+                try:
+                    # Trazar solo las sub-redes deterministas bajo torch.no_grad()
+                    with torch.no_grad():
+                        policy_net = self.model.policy.mlp_extractor.policy_net
+                        action_net = self.model.policy.action_net
+                        policy_net.eval()
+                        action_net.eval()
+                        # pasar dummy_flat.detach() para evitar grad en non-leaf tensors
+                        try:
+                            self.writer.add_graph(policy_net, (dummy_flat.detach(),))
+                        except Exception as e:
+                            print(f"[WARN] add_graph(policy_net) failed: {e}")
+                        try:
+                            latent = policy_net(dummy_flat.detach())
+                            self.writer.add_graph(action_net, (latent.detach(),))
+                        except Exception as e:
+                            print(f"[WARN] add_graph(action_net) failed: {e}")
+                except Exception as e:
+                    print(f"[WARN] add_graph partial failed: {e}")
+            # Always add textual architecture as fallback
+            try:
+                self.writer.add_text('model/architecture', str(self.model.policy))
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[WARN] Falló inicializar SummaryWriter: {e}")
+
+    def _on_step(self) -> bool:
+        # Loggear histogramas de parámetros periódicamente
+        try:
+            if self.writer is None:
+                return True
+            if self.num_timesteps % self.log_freq == 0:
+                for name, param in self.model.policy.named_parameters():
+                    try:
+                        self.writer.add_histogram(name, param.detach().cpu().numpy(), self.num_timesteps)
+                    except Exception:
+                        pass
+                # Intentar loggear learning rate si existe
+                try:
+                    lr = None
+                    if hasattr(self.model, 'lr_schedule') and callable(self.model.lr_schedule):
+                        lr = float(self.model.lr_schedule(self.num_timesteps))
+                    if lr is not None:
+                        self.writer.add_scalar('train/learning_rate', lr, self.num_timesteps)
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[WARN] TensorboardCallback error on step: {e}")
+        return True
+
+    def _on_training_end(self) -> None:
+        if self.writer is not None:
+            try:
+                self.writer.close()
+            except Exception:
+                pass
 DEFAULT_GUI = False
 DEFAULT_RECORD_VIDEO = True
 DEFAULT_OUTPUT_FOLDER = 'results'
@@ -104,9 +191,11 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         if not multiagent:
             train_env = HoverAviary(gui=True, obs=DEFAULT_OBS, act=DEFAULT_ACT, physics=physics)
             eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, physics=physics)
+            eval_env = Monitor(eval_env)
         else:
             train_env = MultiHoverAviary(gui=True, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, physics=physics)
             eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, physics=physics)
+            eval_env = Monitor(eval_env)
         use_render_callback = True
     else:
         if not multiagent:
@@ -115,12 +204,14 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                     n_envs=12,
                                     seed=0)
             eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT,physics=physics)
+            eval_env = Monitor(eval_env)
         else:
             train_env = make_vec_env(MultiHoverAviary,
                                     env_kwargs=dict(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT,physics=physics),
                                     n_envs=12,
                                     seed=0)
             eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT,physics=physics)
+            eval_env = Monitor(eval_env)
         use_render_callback = False
 
     #### Check the environment's spaces ########################
@@ -139,14 +230,20 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                     train_env,
                     device="cpu",
                     tensorboard_log=filename+'/tb/',
-                    n_steps=4096,          # Mayor para más estabilidad
-                    batch_size=128,
-                    n_epochs=20,        # Tamaño de mini-lote
+                    n_steps=int(4096),          # Mayor para más estabilidad
+                    batch_size=int(128),
+                    n_epochs=int(20),        # Tamaño de mini-lote
                     #learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
                     learning_rate=0.0001,
                     policy_kwargs=dict(
-                        net_arch=[dict(pi=[8], vf=[16, 16])],
+                        net_arch=[dict(pi=[6], vf=[16, 16])],
                         activation_fn=torch.nn.Tanh,  # Suaviza salidas
+                        ##### TENSORBOARD MOD: Log Histograms y Gráfico #####
+                        log_std_init=-2.0, # Valor por defecto, ayuda a la estabilidad
+                        ortho_init=True, # Inicialización ortogonal para estabilidad
+                        # El registro de gradientes/pesos se activa internamente si verbose=1 
+                        # y log_interval es bajo, pero a veces necesitas forzarlo:
+                        # SB3 registra estas métricas automáticamente si tensorboard_log está seteado.
                     ),
                     ent_coef=0.015,
                     clip_range=0.3,
@@ -170,15 +267,17 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         render=False
     )
     try:
+        # Añadir TensorBoard callback para grafo y histogramas
+        tb_callback = TensorboardCallback(tb_log_dir=filename+'/tb/', log_freq=2000)
         if use_render_callback:
             train_render_callback = TrainRenderCallback(train_env, sync_human_speed=False)
             model.learn(total_timesteps=int(1e7) if local else int(1e2),
-                        callback=[eval_callback, train_render_callback],
+                        callback=[eval_callback, train_render_callback, tb_callback],
                         log_interval=100,
                         reset_num_timesteps=False if continue_from else True)
         else:
             model.learn(total_timesteps=int(1e7) if local else int(1e2),
-                        callback=eval_callback,
+                        callback=[eval_callback, tb_callback],
                         log_interval=100,
                         reset_num_timesteps=False if continue_from else True)
     except KeyboardInterrupt:
