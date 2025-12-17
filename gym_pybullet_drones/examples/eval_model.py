@@ -21,7 +21,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video,
-                               random_targets=True, physics=Physics.PYB)
+                               random_targets=True, physics=Physics.PYB_WIND, )
     else:
         test_env = MultiHoverAviary(gui=gui,
                                     num_drones=DEFAULT_AGENTS,
@@ -32,7 +32,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                 num_drones=DEFAULT_AGENTS if multiagent else 1,
                 output_folder=output_folder,
                 colab=colab)
-    model = PPO.load(model_path, env=test_env, device="cpu")
+    model = PPO.load(model_path, env=test_env, device="cpu", verbose=0)
     for ep in range(episodes):
         obs, info = test_env.reset(seed=ep, options={})
         start = time.time()

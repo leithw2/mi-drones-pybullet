@@ -256,7 +256,8 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if DEFAULT_ACT == ActionType.ONE_D_RPM:
         target_reward = 474.15 if not multiagent else 949.5
     else:
-        target_reward = 6500 if not multiagent else 920.
+        
+        target_reward = 18500 if not multiagent else 920.
     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=target_reward, verbose=1)
     eval_callback = EvalCallback(
         eval_env,
@@ -274,12 +275,12 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         if use_render_callback:
             train_render_callback = TrainRenderCallback(train_env, sync_human_speed=False)
             model.learn(total_timesteps=int(1e7) if local else int(1e2),
-                        callback=[eval_callback, train_render_callback, tb_callback],
+                        callback=[eval_callback, train_render_callback ],
                         log_interval=100,
                         reset_num_timesteps=False if continue_from else True)
         else:
             model.learn(total_timesteps=int(1e7) if local else int(1e2),
-                        callback=[eval_callback, tb_callback],
+                        callback=[eval_callback],
                         log_interval=100,
                         reset_num_timesteps=False if continue_from else True)
     except KeyboardInterrupt:
