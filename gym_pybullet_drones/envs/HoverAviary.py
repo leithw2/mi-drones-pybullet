@@ -69,6 +69,7 @@ class HoverAviary(BaseRLAviary):
     ################################################################################
     def _draw_target_marker(self):
         # Elimina el marcador anterior si existe
+        #print("Dibujando marcador de objetivo en:", self.TARGET_POS)
         if hasattr(self, '_target_marker_id'):
             p.removeUserDebugItem(self._target_marker_id)
         # Dibuja una esfera pequeña en TARGET_POS
@@ -137,17 +138,19 @@ class HoverAviary(BaseRLAviary):
         base_reward = max(0.00, (30 - dist**2)*0.08)
         #print(f"Base reward: {base_reward}")
         # Penalización por velocidad (para evitar tambaleo)
-        speed_penalty = -0.1 * np.linalg.norm(vel)
+        speed_penalty = -0.05 * np.linalg.norm(vel)
 
         # Penalización por inclinación (roll y pitch, no yaw)
-        angle_penalty = -1.0 * (abs(angles[0]) + abs(angles[1]))
+        angle_penalty = -.50 * (abs(angles[0]) + abs(angles[1]))
 
         # Recompensa extra si está muy cerca y estable
         bonus = 0.0
         if self.random_targets:
-            if dist < 0.05 and np.linalg.norm(vel) < 0.1 and abs(angles[0]) < 0.1 and abs(angles[1]) < 0.1:
-                bonus = 1000
+           
+            if dist < 0.08 and np.linalg.norm(vel) < 0.2 and abs(angles[0]) < 0.2 and abs(angles[1]) < 0.2:
+                bonus = 1500
                 self.TARGET_POS = np.array([np.random.uniform(-1,1),np.random.uniform(-1,1),np.random.uniform(0.5,2.0)])
+                self._draw_target_marker()
                 print(f"New target position: {self.TARGET_POS}")
         else:
             
@@ -160,7 +163,7 @@ class HoverAviary(BaseRLAviary):
                 
 
         if state[2] < 0.05:
-            penalty = -50
+            penalty = -100
         else:
             penalty = 0.01
         #print(f"dist: {dist}, reward_dist: {reward_dist}, speed_penalty: {speed_penalty}, angle_penalty: {angle_penalty}, bonus: {bonus}, base_reward: {base_reward}, Total: {base_reward + penalty + reward_dist + speed_penalty + angle_penalty + bonus}")
@@ -195,12 +198,12 @@ class HoverAviary(BaseRLAviary):
 
         """
         state = self._getDroneStateVector(0)
-        if (abs(state[0]) > 3 or abs(state[1]) > 3 or state[2] > 2.0 # Truncate when the drone is too far away
+        if (abs(state[0]) > 3 or abs(state[1]) > 3 or state[2] > 2.5 # Truncate when the drone is too far away
         ):
             #print(  f"Truncated: pos {state[0:3]}, angles {state[7:10]}")
             return True
         
-        if (abs(state[7]) > .5 or abs(state[8]) > .5 # Truncate when the drone is too tilted
+        if (abs(state[7]) > .7 or abs(state[8]) > .7 # Truncate when the drone is too tilted
         ):
             return True
         if state[2] < 0.05:

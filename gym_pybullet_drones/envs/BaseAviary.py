@@ -742,12 +742,12 @@ class BaseAviary(gym.Env):
         elif self.wind_type == "gust":
             # Ráfagas intermitentes de viento
             self.step_count += 1
-            if self.step_count % 200 == 0:  # Cada 200 steps, una ráfaga
-                gust_strength = np.random.uniform(0.01, 0.05)  # Fuerza de la ráfaga
+            if self.step_count % 400 == 0:  # Cada 200 steps, una ráfaga
+                gust_strength = np.random.uniform(0.005, 0.03)  # Fuerza de la ráfaga
                 gust_direction = np.random.uniform(-1, 1, 3)
                 gust_direction = gust_direction / np.linalg.norm(gust_direction)
                 self.wind_force = gust_strength * gust_direction
-            elif self.step_count % 250 == 0:  # Terminar la ráfaga
+            elif self.step_count % 500 == 0:  # Terminar la ráfaga
                 self.wind_force = np.zeros(3)
         #print(self.wind_force)
         return self.wind_force

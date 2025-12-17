@@ -259,8 +259,8 @@ class BaseRLAviary(BaseAviary):
             # OBS SPACE OF SIZE 15: 12 originales + 3 para TARGET_POS
             lo = -np.inf
             hi = np.inf
-            obs_lower_bound = np.array([[lo,lo,0, lo,lo,lo,lo,lo,lo,lo,lo,lo, lo,lo,lo] for i in range(self.NUM_DRONES)])
-            obs_upper_bound = np.array([[hi,hi,hi,hi,hi,hi,hi,hi,hi,hi,hi,hi, hi,hi,hi] for i in range(self.NUM_DRONES)])
+            obs_lower_bound = np.array([[lo,lo,0, lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo] for i in range(self.NUM_DRONES)])
+            obs_upper_bound = np.array([[hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi] for i in range(self.NUM_DRONES)])
             # Add action buffer to observation space
             act_lo = -1
             act_hi = +1
