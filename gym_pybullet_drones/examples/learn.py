@@ -170,10 +170,10 @@ DEFAULT_OBS = ObservationType('kin') # 'kin' or 'rgb'
 DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
-physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'save-12.01.2025_22.22.59')
-CONTINUE_FROM = None # None or path to saved model folder
-
+physics=Physics.PYB_WIND # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'step_3_save-12.16.2025_11.46.52')
+#CONTINUE_FROM = None # None or path to saved model folder
+RANDOM_TARGETS=True,
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, continue_from=None):
     # Si se especifica un modelo para continuar, usar ese path, si no, crear uno nuevo
@@ -182,35 +182,37 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'No_Wind_No_RanT_step_1_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
     # Alternar entre entrenamiento con render (GUI) y entrenamiento rápido (vectorizado)
     if gui:
         if not multiagent:
-            train_env = HoverAviary(gui=True, obs=DEFAULT_OBS, act=DEFAULT_ACT, physics=physics)
-            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, physics=physics)
+            train_env = HoverAviary(gui=True, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
+            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = Monitor(eval_env)
         else:
-            train_env = MultiHoverAviary(gui=True, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, physics=physics)
-            eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, physics=physics)
+            train_env = MultiHoverAviary(gui=True, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
+            eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = Monitor(eval_env)
         use_render_callback = True
     else:
         if not multiagent:
             train_env = make_vec_env(HoverAviary,
-                                    env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT,physics=physics),
-                                    n_envs=12,
-                                    seed=0)
-            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT,physics=physics)
+                                    env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics),
+                                    n_envs=8,
+                                    seed=0,
+                                    )
+            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = Monitor(eval_env)
         else:
             train_env = make_vec_env(MultiHoverAviary,
-                                    env_kwargs=dict(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT,physics=physics),
-                                    n_envs=12,
-                                    seed=0)
-            eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT,physics=physics)
+                                    env_kwargs=dict(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics),
+                                    n_envs=8,
+                                    seed=0,
+                                    )
+            eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = Monitor(eval_env)
         use_render_callback = False
 
@@ -236,7 +238,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                     #learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
                     learning_rate=0.0001,
                     policy_kwargs=dict(
-                        net_arch=[dict(pi=[6], vf=[16, 16])],
+                        net_arch=[dict(pi=[8], vf=[16, 16])],
                         activation_fn=torch.nn.Tanh,  # Suaviza salidas
                         ##### TENSORBOARD MOD: Log Histograms y Gráfico #####
                         log_std_init=-2.0, # Valor por defecto, ayuda a la estabilidad
@@ -254,7 +256,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if DEFAULT_ACT == ActionType.ONE_D_RPM:
         target_reward = 474.15 if not multiagent else 949.5
     else:
-        target_reward = 4500 if not multiagent else 920.
+        target_reward = 6500 if not multiagent else 920.
     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=target_reward, verbose=1)
     eval_callback = EvalCallback(
         eval_env,
@@ -315,6 +317,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video,
+                               random_targets=RANDOM_TARGETS,
                                physics=physics,
                                )
         test_env_nogui = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT)

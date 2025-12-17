@@ -20,7 +20,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
         test_env = HoverAviary(gui=gui,
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
-                               record=record_video, 
+                               record=record_video,
                                random_targets=True, physics=Physics.PYB)
     else:
         test_env = MultiHoverAviary(gui=gui,
@@ -73,7 +73,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results','save-12.15.2025_19.51.03', 'best_model.zip'), help='Ruta al archivo .zip del modelo PPO')
+    parser.add_argument('--model_path', type=str, default= os.path.join('results','step_3_save-12.16.2025_11.46.52', 'best_model.zip'), help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
     parser.add_argument('--record_video', default=False, type=bool, help='Grabar video (default: False)')
