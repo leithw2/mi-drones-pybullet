@@ -63,7 +63,7 @@ class BaseRLAviary(BaseAviary):
 
         """
         #### Create a buffer for the last .5 sec of actions ########
-        self.ACTION_BUFFER_SIZE = int(ctrl_freq//2)
+        self.ACTION_BUFFER_SIZE = int(0)
         self.action_buffer = deque(maxlen=self.ACTION_BUFFER_SIZE)
         ####
         # Initialize TARGET_POS to avoid attribute errors
@@ -259,11 +259,11 @@ class BaseRLAviary(BaseAviary):
             # OBS SPACE OF SIZE 15: 12 originales + 3 para TARGET_POS
             lo = -np.inf
             hi = np.inf
-            obs_lower_bound = np.array([[lo,lo,0, lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo] for i in range(self.NUM_DRONES)])
-            obs_upper_bound = np.array([[hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi] for i in range(self.NUM_DRONES)])
+            obs_lower_bound = np.array([[lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo] for i in range(self.NUM_DRONES)])
+            obs_upper_bound = np.array([[hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi] for i in range(self.NUM_DRONES)])
             # Add action buffer to observation space
             act_lo = -1
-            act_hi = +1
+            act_hi = +1 
             for i in range(self.ACTION_BUFFER_SIZE):
                 if self.ACT_TYPE in [ActionType.RPM, ActionType.VEL]:
                     obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo,act_lo,act_lo,act_lo] for i in range(self.NUM_DRONES)])])
@@ -306,19 +306,20 @@ class BaseRLAviary(BaseAviary):
             return np.array([self.rgb[i] for i in range(self.NUM_DRONES)]).astype('float32')
         elif self.OBS_TYPE == ObservationType.KIN:
             # OBS SPACE OF SIZE 15: 12 originales + 3 para TARGET_POS
-            obs_15 = np.zeros((self.NUM_DRONES,15))
+            obs_12 = np.zeros((self.NUM_DRONES,12))
             for i in range(self.NUM_DRONES):
                 obs = self._getDroneStateVector(i)
                 # Concatenar TARGET_POS a la observación
                 if hasattr(self, 'TARGET_POS'):
                     if self.NUM_DRONES == 1:
-                        target = self.TARGET_POS
+                        target = self.TARGET_POS - obs[0:3]
+                        
                     else:
-                        target = self.TARGET_POS[i]
+                        target = self.TARGET_POS[i] - obs[0:3]
                 else:
                     target = np.zeros(3)
-                obs_15[i, :] = np.hstack([obs[0:3], obs[7:10], obs[10:13], obs[13:16], target]).reshape(15,)
-            ret = np.array([obs_15[i, :] for i in range(self.NUM_DRONES)]).astype('float32')
+                obs_12[i, :] = np.hstack([target, obs[7:10], obs[10:13], obs[13:16]]).reshape(12,)
+            ret = np.array([obs_12[i, :] for i in range(self.NUM_DRONES)]).astype('float32')
             # Add action buffer to observation
             for i in range(self.ACTION_BUFFER_SIZE):
                 ret = np.hstack([ret, np.array([self.action_buffer[i][j, :] for j in range(self.NUM_DRONES)])])

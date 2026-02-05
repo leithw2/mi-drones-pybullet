@@ -171,9 +171,9 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB_WIND # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'step_3_save-12.16.2025_11.46.52')
-CONTINUE_FROM = None # None or path to saved model folder
-RANDOM_TARGETS=True,
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs12_wind_randtarget_save-01.28.2026_12.57.42')
+#CONTINUE_FROM = None # None or path to saved model folder
+RANDOM_TARGETS=True
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, continue_from=None):
     # Si se especifica un modelo para continuar, usar ese path, si no, crear uno nuevo
@@ -182,7 +182,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'basura_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'obs16_nowind_randtarget_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
@@ -257,7 +257,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         target_reward = 474.15 if not multiagent else 949.5
     else:
         
-        target_reward = 18500 if not multiagent else 920.
+        target_reward = 30500 if not multiagent else 920.
     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=target_reward, verbose=1)
     eval_callback = EvalCallback(
         eval_env,
@@ -359,7 +359,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                         timestamp=i/test_env.CTRL_FREQ,
                         state=np.hstack([obs2[0:3],
                                             np.zeros(4),
-                                            obs2[3:15],
+                                            obs2[3:13],
                                             act2
                                             ]),
                         control=np.zeros(12)
@@ -370,7 +370,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                             timestamp=i/test_env.CTRL_FREQ,
                             state=np.hstack([obs2[d][0:3],
                                                 np.zeros(4),
-                                                obs2[d][3:15],
+                                                obs2[d][3:13],
                                                 act2[d]
                                                 ]),
                             control=np.zeros(12)

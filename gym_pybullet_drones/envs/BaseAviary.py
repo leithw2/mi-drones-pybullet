@@ -571,6 +571,14 @@ class BaseAviary(gym.Env):
         """
         state = np.hstack([self.pos[nth_drone, :], self.quat[nth_drone, :], self.rpy[nth_drone, :],
                            self.vel[nth_drone, :], self.ang_v[nth_drone, :], self.last_clipped_action[nth_drone, :]])
+        '''observation vector:
+        0-2: x, y, z position in meters
+        3-6: x, y, z, w quaternion orientation
+        7-9: roll, pitch, yaw euler orientation in radians
+        10-12: x, y, z linear velocity in m/s
+        13-15: x, y, z angular velocity in rad/s
+        16-19: propeller angular velocities in rad/s
+        '''
         return state.reshape(20,)
 
     ################################################################################

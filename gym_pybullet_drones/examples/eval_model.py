@@ -11,6 +11,7 @@ from gym_pybullet_drones.utils.utils import sync
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType, Physics
 
 import time
+import os
 
 def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, output_folder='results', colab=False, episodes=3, max_steps=None, speed_factor=1.0):
     DEFAULT_OBS = ObservationType('kin')
@@ -21,7 +22,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video,
-                               random_targets=True, physics=Physics.PYB_WIND, )
+                               random_targets=True, physics=Physics.PYB)
     else:
         test_env = MultiHoverAviary(gui=gui,
                                     num_drones=DEFAULT_AGENTS,
@@ -49,7 +50,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                         timestamp=i/test_env.CTRL_FREQ,
                         state=np.hstack([obs2[0:3],
                                             np.zeros(4),
-                                            obs2[3:15],
+                                            obs2[3:12],
                                             act2]),
                         control=np.zeros(12))
                 else:
@@ -58,7 +59,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                             timestamp=i/test_env.CTRL_FREQ,
                             state=np.hstack([obs2[d][0:3],
                                                 np.zeros(4),
-                                                obs2[d][3:15],
+                                                obs2[d][3:12],
                                                 act2[d]]),
                             control=np.zeros(12))
             if hasattr(test_env, 'render'):
@@ -73,10 +74,10 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results','step_3_save-12.16.2025_11.46.52', 'best_model.zip'), help='Ruta al archivo .zip del modelo PPO')
+    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs16_nowind_randtarget_save-01.27.2026_16.42.48', 'best_model.zip'), help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
-    parser.add_argument('--record_video', default=False, type=bool, help='Grabar video (default: False)')
+    parser.add_argument('--record_video', default=True, type=bool, help='Grabar video (default: False)')
     parser.add_argument('--output_folder', default='results', type=str, help='Carpeta de logs')
     parser.add_argument('--colab', default=False, type=bool, help='Modo Colab')
     parser.add_argument('--episodes', default=3, type=int, help='Cantidad de episodios a evaluar')
