@@ -75,7 +75,19 @@ from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
 from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType
 
-print(torch.cuda.is_available())
+# Device autodetection and PyTorch perf tweaks
+print("CUDA available:", torch.cuda.is_available())
+DEVICE ="cpu"
+# Use half of logical cores to avoid oversubscription with VecEnv workers
+try:
+    torch.set_num_threads(max(1, (os.cpu_count() or 1)//2))
+except Exception:
+    pass
+try:
+    torch.backends.cudnn.benchmark = True
+except Exception:
+    pass
+N_ENVS = min(16, max(1, (os.cpu_count() or 1)))
 
 # Callback para loggear en TensorBoard: gráfico del modelo, histogramas de parámetros y LR
 class TensorboardCallback(BaseCallback):
@@ -171,7 +183,7 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB_WIND # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs12_wind_randtarget_save-01.28.2026_12.57.42')
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs12_8x6_Wind_randtarget_save-02.18.2026_11.49.15')
 #CONTINUE_FROM = None # None or path to saved model folder
 RANDOM_TARGETS=True
 
@@ -182,7 +194,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'obs16_nowind_randtarget_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'obs12_8x6_nowind_randtarget_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
@@ -201,7 +213,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         if not multiagent:
             train_env = make_vec_env(HoverAviary,
                                     env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics),
-                                    n_envs=8,
+                                    n_envs=N_ENVS,
                                     seed=0,
                                     )
             eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
@@ -209,7 +221,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         else:
             train_env = make_vec_env(MultiHoverAviary,
                                     env_kwargs=dict(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics),
-                                    n_envs=8,
+                                    n_envs=N_ENVS,
                                     seed=0,
                                     )
             eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
@@ -224,21 +236,22 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     #### Train the model con manejo de interrupción ###########
     if continue_from and os.path.isfile(os.path.join(filename, 'final_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'final_model.zip')}")
-        model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device="cpu")
+        model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device=DEVICE)
         # El modelo ya contiene num_timesteps internamente
         model.tensorboard_log = filename+'/tb/'
     else:
         model = PPO('MlpPolicy',
-                    train_env,
-                    device="cpu",
-                    tensorboard_log=filename+'/tb/',
-                    n_steps=int(4096),          # Mayor para más estabilidad
-                    batch_size=int(128),
-                    n_epochs=int(20),        # Tamaño de mini-lote
-                    #learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
-                    learning_rate=0.0001,
+                train_env,
+                device=DEVICE,
+                tensorboard_log=filename+'/tb/',
+                n_steps=int(8192),          # Aumentado para mejor uso de GPU
+                batch_size=int(256),
+                n_epochs=int(10),        # Menos épocas por update, más datos por epoch
+                gae_lambda=0.95,
+                    learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
+                    #learning_rate=0.0001,
                     policy_kwargs=dict(
-                        net_arch=[dict(pi=[8], vf=[16, 16])],
+                        net_arch=[dict(pi=[8,6], vf=[16, 16])],
                         activation_fn=torch.nn.Tanh,  # Suaviza salidas
                         ##### TENSORBOARD MOD: Log Histograms y Gráfico #####
                         log_std_init=-2.0, # Valor por defecto, ayuda a la estabilidad
@@ -247,10 +260,58 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                         # y log_interval es bajo, pero a veces necesitas forzarlo:
                         # SB3 registra estas métricas automáticamente si tensorboard_log está seteado.
                     ),
+                    
                     ent_coef=0.015,
                     clip_range=0.3,
                     verbose=1)
+        # dtype = torch.float16 # Cambiar a torch.float32 para 32 bits, torch.float16 para 16 bits
+        # model.policy = model.policy.to(dtype=dtype)
         print(f"[INFO] Creando modelo en {filename}") #
+        # Try to compile policy for faster forward (best-effort)
+        try:
+            if hasattr(torch, 'compile'):
+                # Only compile if Triton is available when using CUDA to avoid runtime failures
+                try:
+                    triton_available = False
+                    if torch.cuda.is_available():
+                        try:
+                            import triton  # type: ignore
+                            triton_available = True
+                        except Exception:
+                            triton_available = False
+                    else:
+                        # CPU-only compile may not need Triton
+                        triton_available = True
+                except Exception:
+                    triton_available = False
+
+                if torch.cuda.is_available() and not triton_available:
+                    print('[WARN] Triton not available; skipping torch.compile to avoid runtime errors.')
+                else:
+                    try:
+                        model.policy = torch.compile(model.policy)
+                    except Exception as e:
+                        print(f"[WARN] torch.compile failed at compile time: {e}")
+        except Exception as e:
+            print(f"[WARN] torch.compile block failed: {e}")
+        # Enable mixed precision forward (AMP) for CUDA if available
+        try:
+            if DEVICE == 'cuda':
+                from torch.cuda.amp import autocast
+                orig_forward = model.policy.forward
+                def _amp_forward(*args, **kwargs):
+                    with autocast(enabled=True):
+                        return orig_forward(*args, **kwargs)
+                model.policy.forward = _amp_forward
+                # Enable TF32 where available
+                try:
+                    torch.backends.cudnn.allow_tf32 = True
+                    torch.backends.cuda.matmul.allow_tf32 = True
+                except Exception:
+                    pass
+                print("[INFO] AMP enabled for policy forward (inference/training autocast)")
+        except Exception as e:
+            print(f"[WARN] enabling AMP wrapper failed: {e}")
         
     #### Target cumulative rewards (problem-dependent) ##########
     if DEFAULT_ACT == ActionType.ONE_D_RPM:
@@ -270,7 +331,6 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         render=False
     )
     try:
-        # Añadir TensorBoard callback para grafo y histogramas
         tb_callback = TensorboardCallback(tb_log_dir=filename+'/tb/', log_freq=2000)
         if use_render_callback:
             train_render_callback = TrainRenderCallback(train_env, sync_human_speed=False)
@@ -309,10 +369,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     else:
         print("[ERROR]: no model under the specified path", filename)
     if path:
-        model = PPO.load(path)
+        model = PPO.load(path, device=DEVICE)
 
     #### Show (and record a video of) the model's performance ##
-    # Siempre mostrar el entorno final con GUI para visualizar el resultado, aunque el entrenamiento haya sido sin GUI
     if not multiagent:
         test_env = HoverAviary(gui=True,
                                obs=DEFAULT_OBS,
@@ -345,6 +404,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if path:
         obs, info = test_env.reset(seed=0, options={})
         start = time.time()
+
         for i in range((test_env.EPISODE_LEN_SEC+20)*test_env.CTRL_FREQ):
             action, _states = model.predict(obs,
                                             deterministic=True,

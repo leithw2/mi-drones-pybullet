@@ -4,6 +4,12 @@ import argparse
 import numpy as np
 import gymnasium as gym
 from stable_baselines3 import PPO
+import torch
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+try:
+    torch.backends.cudnn.benchmark = True
+except Exception:
+    pass
 from gym_pybullet_drones.envs.HoverAviary import HoverAviary
 from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType
@@ -23,7 +29,17 @@ def play(model_path=DEFAULT_MODEL_PATH, multiagent=DEFAULT_MA, gui=DEFAULT_GUI):
         print(f"[ERROR] Model file not found at: {model_path}")
         return
 
-    model = PPO.load(model_path)
+    model = PPO.load(model_path, device=DEVICE)
+    try:
+        if DEVICE == 'cuda':
+            from torch.cuda.amp import autocast
+            orig_forward = model.policy.forward
+            def _amp_forward(*args, **kwargs):
+                with autocast(enabled=True):
+                    return orig_forward(*args, **kwargs)
+            model.policy.forward = _amp_forward
+    except Exception:
+        pass
     print(f"[INFO] Loaded model from {model_path}")
 
     #### Create test environment ####

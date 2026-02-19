@@ -29,39 +29,52 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                                     obs=DEFAULT_OBS,
                                     act=DEFAULT_ACT,
                                     record=record_video)
-    logger = Logger(logging_freq_hz=int(test_env.CTRL_FREQ),
-                num_drones=DEFAULT_AGENTS if multiagent else 1,
-                output_folder=output_folder,
-                colab=colab)
+    # logger = Logger(logging_freq_hz=int(test_env.CTRL_FREQ),
+    #             num_drones=DEFAULT_AGENTS if multiagent else 1,
+    #             output_folder=output_folder,
+    #             colab=colab)
+    import os
+    print("Directorio actual:", os.getcwd())
     model = PPO.load(model_path, env=test_env, device="cpu", verbose=0)
     for ep in range(episodes):
         obs, info = test_env.reset(seed=ep, options={})
         start = time.time()
         total_reward = 0
+        print("Observación original:", obs)
+        OBS_PRECISION = np.float32  # by default, SB3 used 32-bit precision for observations, but we can convert to 16-bit for faster inference if the model was trained with that precision. Ajustar según el tipo de dato usado en el entrenamiento.
+        obs_converted = obs.astype(OBS_PRECISION)
+        obs_converted = np.round(obs_converted, 2)
         for i in range(max_steps or (test_env.EPISODE_LEN_SEC+20)*test_env.CTRL_FREQ):
-            action, _states = model.predict(obs, deterministic=True)
+            action, _states = model.predict(obs_converted, deterministic=True)
+            print(action)
+            action = np.round(action, 2)
+            print(action)
             obs, reward, terminated, truncated, info = test_env.step(action)
+            print("Observación original:", obs)
+            obs_converted = obs.astype(OBS_PRECISION)
+            obs_converted = np.round(obs_converted, 2)
+            print("Observación convertida:", obs_converted)
             obs2 = obs.squeeze()
             act2 = action.squeeze()
             total_reward += reward
-            if DEFAULT_OBS == ObservationType.KIN:
-                if not multiagent:
-                    logger.log(drone=0,
-                        timestamp=i/test_env.CTRL_FREQ,
-                        state=np.hstack([obs2[0:3],
-                                            np.zeros(4),
-                                            obs2[3:12],
-                                            act2]),
-                        control=np.zeros(12))
-                else:
-                    for d in range(DEFAULT_AGENTS):
-                        logger.log(drone=d,
-                            timestamp=i/test_env.CTRL_FREQ,
-                            state=np.hstack([obs2[d][0:3],
-                                                np.zeros(4),
-                                                obs2[d][3:12],
-                                                act2[d]]),
-                            control=np.zeros(12))
+            # if DEFAULT_OBS == ObservationType.KIN:
+            #     if not multiagent:
+            #         logger.log(drone=0,
+            #             timestamp=i/test_env.CTRL_FREQ,
+            #             state=np.hstack([obs2[0:3],
+            #                                 np.zeros(4),
+            #                                 obs2[3:12],
+            #                                 act2]),
+            #             control=np.zeros(12))
+            #     else:
+            #         for d in range(DEFAULT_AGENTS):
+            #             logger.log(drone=d,
+            #                 timestamp=i/test_env.CTRL_FREQ,
+            #                 state=np.hstack([obs2[d][0:3],
+            #                                     np.zeros(4),
+            #                                     obs2[d][3:12],
+            #                                     act2[d]]),
+            #                 control=np.zeros(12))
             if hasattr(test_env, 'render'):
                 test_env.render()
             sync(i, start, test_env.CTRL_TIMESTEP * speed_factor)
@@ -69,12 +82,12 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                 break
         print(f"Episodio {ep+1}: reward total = {total_reward}")
     test_env.close()
-    if DEFAULT_OBS == ObservationType.KIN:
-        logger.plot()
+    # if DEFAULT_OBS == ObservationType.KIN:
+    #     logger.plot()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs16_nowind_randtarget_save-01.27.2026_16.42.48', 'best_model.zip'), help='Ruta al archivo .zip del modelo PPO')
+    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs12_8x6_nowind_randtarget_save-02.18.2026_11.49.15', 'best_model'), help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
     parser.add_argument('--record_video', default=True, type=bool, help='Grabar video (default: False)')

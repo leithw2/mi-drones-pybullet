@@ -2,6 +2,11 @@ import os
 import sys
 import numpy as np
 import torch
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+try:
+    torch.backends.cudnn.benchmark = True
+except Exception:
+    pass
 import threading
 import time
 from stable_baselines3 import PPO
@@ -295,7 +300,17 @@ class EvalModelGUI:
                 )
             
             # Cargar modelo
-            model = PPO.load(self.model_path.get(), env=test_env, device="cpu", verbose=0)
+            model = PPO.load(self.model_path.get(), env=test_env, device=DEVICE, verbose=0)
+            try:
+                if DEVICE == 'cuda':
+                    from torch.cuda.amp import autocast
+                    orig_forward = model.policy.forward
+                    def _amp_forward(*args, **kwargs):
+                        with autocast(enabled=True):
+                            return orig_forward(*args, **kwargs)
+                    model.policy.forward = _amp_forward
+            except Exception:
+                pass
             
             num_episodes = self.eval_params['episodes'].get()
             max_steps = self.eval_params['max_steps'].get()

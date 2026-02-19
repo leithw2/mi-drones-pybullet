@@ -22,6 +22,11 @@ import argparse
 import gymnasium as gym
 import numpy as np
 import torch
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+try:
+    torch.backends.cudnn.benchmark = True
+except Exception:
+    pass
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
@@ -117,7 +122,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         path = filename+'/best_model.zip'
     else:
         print("[ERROR]: no model under the specified path", filename)
-    model = PPO.load(path)
+    model = PPO.load(path, device=DEVICE)
 
     #### Show (and record a video of) the model's performance ##
     if not multiagent:

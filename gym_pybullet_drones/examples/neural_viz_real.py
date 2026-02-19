@@ -74,7 +74,17 @@ class NeuralNetVisualizer:
         self.clock = pygame.time.Clock()
         self.running = True
         
-        self.model = PPO.load(model_path, device="cpu", verbose=0)
+        self.model = PPO.load(model_path, device=("cuda" if torch.cuda.is_available() else "cpu"), verbose=0)
+        try:
+            if torch.cuda.is_available():
+                from torch.cuda.amp import autocast
+                orig_forward = self.model.policy.forward
+                def _amp_forward(*args, **kwargs):
+                    with autocast(enabled=True):
+                        return orig_forward(*args, **kwargs)
+                self.model.policy.forward = _amp_forward
+        except Exception:
+            pass
         self.model.policy.eval()
         self.activation_capture = ModelActivationCapture(self.model)
         
