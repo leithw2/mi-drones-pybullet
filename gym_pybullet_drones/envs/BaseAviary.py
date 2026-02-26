@@ -165,9 +165,22 @@ class BaseAviary(gym.Env):
                 for i in range(4):
                     self.SLIDERS[i] = p.addUserDebugParameter("Propeller "+str(i)+" RPM", 0, self.MAX_RPM, self.HOVER_RPM, physicsClientId=self.CLIENT)
                 self.INPUT_SWITCH = p.addUserDebugParameter("Use GUI RPM", 9999, -1, 0, physicsClientId=self.CLIENT)
+            # Performance tuning for interactive GUI
+            try:
+                p.setRealTimeSimulation(0, physicsClientId=self.CLIENT)
+                p.setPhysicsEngineParameter(enableFileCaching=1, physicsClientId=self.CLIENT)
+                p.setTimeStep(self.PYB_TIMESTEP, physicsClientId=self.CLIENT)
+            except Exception:
+                pass
         else:
             #### Without debug GUI #####################################
             self.CLIENT = p.connect(p.DIRECT)
+            try:
+                p.setRealTimeSimulation(0, physicsClientId=self.CLIENT)
+                p.setPhysicsEngineParameter(enableFileCaching=1, physicsClientId=self.CLIENT)
+                p.setTimeStep(self.PYB_TIMESTEP, physicsClientId=self.CLIENT)
+            except Exception:
+                pass
             #### Uncomment the following line to use EGL Render Plugin #
             #### Instead of TinyRender (CPU-based) in PYB's Direct mode
             # if platform == "linux": p.setAdditionalSearchPath(pybullet_data.getDataPath()); plugin = p.loadPlugin(egl.get_filename(), "_eglRendererPlugin"); print("plugin=", plugin)
@@ -1042,17 +1055,22 @@ class BaseAviary(gym.Env):
         files in folder `assets/`.
 
         """
+        #TODO los siguientes parametros M, IXX, IYY, IZZ, KF, KM deben ser manipulados para contener un ruido del 20% para simular la realidad, y asi evitar el sim2real gap
+        
+        # Definir ruido relativo (ej. 5%)
+        rnd = lambda x, p=0.0: np.random.normal(x, abs(x * p))
+        
         URDF_TREE = etxml.parse(pkg_resources.resource_filename('gym_pybullet_drones', 'assets/'+self.URDF)).getroot()
-        M = float(URDF_TREE[1][0][1].attrib['value'])
+        M = rnd(float(URDF_TREE[1][0][1].attrib['value']))
         L = float(URDF_TREE[0].attrib['arm'])
         THRUST2WEIGHT_RATIO = float(URDF_TREE[0].attrib['thrust2weight'])
-        IXX = float(URDF_TREE[1][0][2].attrib['ixx'])
-        IYY = float(URDF_TREE[1][0][2].attrib['iyy'])
-        IZZ = float(URDF_TREE[1][0][2].attrib['izz'])
+        IXX = rnd(float(URDF_TREE[1][0][2].attrib['ixx']))
+        IYY = rnd(float(URDF_TREE[1][0][2].attrib['iyy']))
+        IZZ = rnd(float(URDF_TREE[1][0][2].attrib['izz']))
         J = np.diag([IXX, IYY, IZZ])
         J_INV = np.linalg.inv(J)
-        KF = float(URDF_TREE[0].attrib['kf'])
-        KM = float(URDF_TREE[0].attrib['km'])
+        KF = rnd(float(URDF_TREE[0].attrib['kf']))
+        KM = rnd(float(URDF_TREE[0].attrib['km']))
         COLLISION_H = float(URDF_TREE[1][2][1][0].attrib['length'])
         COLLISION_R = float(URDF_TREE[1][2][1][0].attrib['radius'])
         COLLISION_SHAPE_OFFSETS = [float(s) for s in URDF_TREE[1][2][0].attrib['xyz'].split(' ')]

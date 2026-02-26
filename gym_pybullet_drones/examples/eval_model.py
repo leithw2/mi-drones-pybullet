@@ -22,7 +22,9 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video,
-                               random_targets=True, physics=Physics.PYB)
+                               initial_xyzs=np.array([[0,0,1]]),
+                               initial_rpys=np.array([[0,0,0]]),
+                               random_targets=True, physics=Physics.PYB_WIND)
     else:
         test_env = MultiHoverAviary(gui=gui,
                                     num_drones=DEFAULT_AGENTS,
@@ -40,20 +42,10 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
         obs, info = test_env.reset(seed=ep, options={})
         start = time.time()
         total_reward = 0
-        print("Observación original:", obs)
-        OBS_PRECISION = np.float32  # by default, SB3 used 32-bit precision for observations, but we can convert to 16-bit for faster inference if the model was trained with that precision. Ajustar según el tipo de dato usado en el entrenamiento.
-        obs_converted = obs.astype(OBS_PRECISION)
-        obs_converted = np.round(obs_converted, 2)
+
         for i in range(max_steps or (test_env.EPISODE_LEN_SEC+20)*test_env.CTRL_FREQ):
-            action, _states = model.predict(obs_converted, deterministic=True)
-            print(action)
-            action = np.round(action, 2)
-            print(action)
+            action, _states = model.predict(obs, deterministic=True, )
             obs, reward, terminated, truncated, info = test_env.step(action)
-            print("Observación original:", obs)
-            obs_converted = obs.astype(OBS_PRECISION)
-            obs_converted = np.round(obs_converted, 2)
-            print("Observación convertida:", obs_converted)
             obs2 = obs.squeeze()
             act2 = action.squeeze()
             total_reward += reward
@@ -87,7 +79,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs12_8x6_nowind_randtarget_save-02.18.2026_11.49.15', 'best_model'), help='Ruta al archivo .zip del modelo PPO')
+    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs12_Wind_randtarget_save-02.10.2026_13.55.40', 'best_model'), help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
     parser.add_argument('--record_video', default=True, type=bool, help='Grabar video (default: False)')

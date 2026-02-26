@@ -197,6 +197,7 @@ class HoverAviary(BaseRLAviary):
             Whether the current episode timed out.
 
         """
+        
         state = self._getDroneStateVector(0)
         if (abs(state[0]) > 3 or abs(state[1]) > 3 or state[2] > 2.5 # Truncate when the drone is too far away
         ):

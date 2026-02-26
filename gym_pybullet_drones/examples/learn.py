@@ -183,7 +183,7 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB_WIND # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs12_8x6_Wind_randtarget_save-02.18.2026_11.49.15')
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs12_Wind_noiseparmeters_randtarget_save-02.10.2026_13.55.40')
 #CONTINUE_FROM = None # None or path to saved model folder
 RANDOM_TARGETS=True
 
@@ -194,7 +194,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'obs12_8x6_nowind_randtarget_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'obs12_8_groundInit_nowind_randtarget_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
@@ -251,7 +251,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                     learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
                     #learning_rate=0.0001,
                     policy_kwargs=dict(
-                        net_arch=[dict(pi=[8,6], vf=[16, 16])],
+                        net_arch=[dict(pi=[8], vf=[16, 16])],
                         activation_fn=torch.nn.Tanh,  # Suaviza salidas
                         ##### TENSORBOARD MOD: Log Histograms y Gráfico #####
                         log_std_init=-2.0, # Valor por defecto, ayuda a la estabilidad
