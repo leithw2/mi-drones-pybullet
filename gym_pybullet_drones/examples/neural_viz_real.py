@@ -247,7 +247,7 @@ class NeuralNetVisualizer:
 
 
 def main():
-    model_path = os.path.join('results', 'obs12_24x12_Wind_randtarget_save-02.19.2026_11.23.17', 'best_model.zip')
+    model_path = os.path.join('results', 'obs12_8_lidar_nowind_randtarget_save-02.27.2026_18.19.22', 'best_model.zip')
     
     if not os.path.exists(model_path):
         print(f"Error: Modelo no encontrado en {model_path}")
