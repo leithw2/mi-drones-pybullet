@@ -105,26 +105,26 @@ class BaseRLAviary(BaseAviary):
         Overrides BaseAviary's method.
 
         """
-        if self.OBS_TYPE == ObservationType.RGB:
+        if True:
             p.loadURDF("block.urdf",
-                       [1, 0, .1],
+                       [5, -0.5, 0.5],
                        p.getQuaternionFromEuler([0, 0, 0]),
-                       physicsClientId=self.CLIENT
+                       physicsClientId=self.CLIENT, globalScaling=20
                        )
             p.loadURDF("cube_small.urdf",
-                       [0, 1, .1],
+                       [1.5, 0.5, 0.5],
                        p.getQuaternionFromEuler([0, 0, 0]),
-                       physicsClientId=self.CLIENT
+                       physicsClientId=self.CLIENT, globalScaling=20
                        )
             p.loadURDF("duck_vhacd.urdf",
-                       [-1, 0, .1],
-                       p.getQuaternionFromEuler([0, 0, 0]),
-                       physicsClientId=self.CLIENT
+                       [3, 0, 0.5],
+                       p.getQuaternionFromEuler([1, 0, 0]),
+                       physicsClientId=self.CLIENT, globalScaling=20
                        )
             p.loadURDF("teddy_vhacd.urdf",
-                       [0, -1, .1],
-                       p.getQuaternionFromEuler([0, 0, 0]),
-                       physicsClientId=self.CLIENT
+                       [4, 0, 0.5],
+                       p.getQuaternionFromEuler([2, 0, 0]),
+                       physicsClientId=self.CLIENT, globalScaling=20
                        )
         else:
             pass
@@ -256,11 +256,13 @@ class BaseRLAviary(BaseAviary):
                               high=255,
                               shape=(self.NUM_DRONES, self.IMG_RES[1], self.IMG_RES[0], 4), dtype=np.uint8)
         elif self.OBS_TYPE == ObservationType.KIN:
-            # OBS SPACE OF SIZE 15: 12 originales + 3 para TARGET_POS
+            # OBS SPACE OF SIZE
             lo = -np.inf
             hi = np.inf
-            obs_lower_bound = np.array([[lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo] for i in range(self.NUM_DRONES)])
-            obs_upper_bound = np.array([[hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi] for i in range(self.NUM_DRONES)])
+            obs_lower_bound = np.array([[lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
+            obs_upper_bound = np.array([[hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
+            #obs_lower_bound = np.array([[lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo] for i in range(self.NUM_DRONES)])
+            #obs_upper_bound = np.array([[hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi] for i in range(self.NUM_DRONES)])
             # Add action buffer to observation space
             act_lo = -1
             act_hi = +1 
@@ -306,7 +308,9 @@ class BaseRLAviary(BaseAviary):
             return np.array([self.rgb[i] for i in range(self.NUM_DRONES)]).astype('float32')
         elif self.OBS_TYPE == ObservationType.KIN:
             # OBS SPACE OF SIZE 15: 12 originales + 3 para TARGET_POS
-            obs_12 = np.zeros((self.NUM_DRONES,12))
+            obs_12 = np.zeros((self.NUM_DRONES,17))
+            lidar = self.lidar if hasattr(self, 'lidar') else np.zeros(5) # placeholder in case _update_lidar() hasn't been called yet
+
             for i in range(self.NUM_DRONES):
                 obs = self._getDroneStateVector(i)
                 # Concatenar TARGET_POS a la observación
@@ -318,7 +322,7 @@ class BaseRLAviary(BaseAviary):
                         target = self.TARGET_POS[i] - obs[0:3]
                 else:
                     target = np.zeros(3)
-                obs_12[i, :] = np.hstack([target, obs[7:10], obs[10:13], obs[13:16]]).reshape(12,)
+                obs_12[i, :] = np.hstack([target, obs[7:10], obs[10:13], obs[13:16], lidar]).reshape(17,)
             ret = np.array([obs_12[i, :] for i in range(self.NUM_DRONES)]).astype('float32')
             # Add action buffer to observation
             for i in range(self.ACTION_BUFFER_SIZE):

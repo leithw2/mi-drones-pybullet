@@ -9,8 +9,8 @@ class HoverAviary(BaseRLAviary):
     
     def __init__(self,
                  drone_model: DroneModel=DroneModel.CF2X,
-                 initial_xyzs=None,
-                 initial_rpys=None,
+                 initial_xyzs=np.array([[0,0,1]]),
+                 initial_rpys=np.array([[0,0,0]]),
                  physics: Physics=Physics.PYB,
                  pyb_freq: int = 240,
                  ctrl_freq: int = 30,
@@ -88,9 +88,9 @@ class HoverAviary(BaseRLAviary):
         
         if self.random_targets:
             self.TARGET_POS = np.array([
+                np.random.uniform(6, 10),
                 np.random.uniform(-1, 1),
-                np.random.uniform(-1, 1),
-                np.random.uniform(0.5, 2.0)
+                np.random.uniform(0.1, 2.5)
             ])
         else:
             self.TARGET_POS = np.array([0,0,1])
@@ -131,12 +131,13 @@ class HoverAviary(BaseRLAviary):
         if dist < self._best_dist:
             reward_dist = 0.1  # Mayor recompensa por acercarse
             self._best_dist = dist
-        elif dist > self._best_dist + 0.1:
+        elif dist > self._best_dist + 0.03:
             reward_dist = -0.1  # Mayor penalización por alejarse
 
 
-        base_reward = max(0.00, (30 - dist**2)*0.08)
+        base_reward = max(0.00, (65 - dist**2)*0.04)
         #print(f"Base reward: {base_reward}")
+        #print(f"Distance: {dist}")
         # Penalización por velocidad (para evitar tambaleo)
         speed_penalty = -0.05 * np.linalg.norm(vel)
 
@@ -149,7 +150,7 @@ class HoverAviary(BaseRLAviary):
            
             if dist < 0.08 and np.linalg.norm(vel) < 0.2 and abs(angles[0]) < 0.2 and abs(angles[1]) < 0.2:
                 bonus = 1500
-                self.TARGET_POS = np.array([np.random.uniform(-1,1),np.random.uniform(-1,1),np.random.uniform(0.5,2.0)])
+                self.TARGET_POS = np.array([np.random.uniform(6, 10),np.random.uniform(-1,1),np.random.uniform(1, 2.5)])
                 self._draw_target_marker()
                 print(f"New target position: {self.TARGET_POS}")
         else:
@@ -199,7 +200,7 @@ class HoverAviary(BaseRLAviary):
         """
         
         state = self._getDroneStateVector(0)
-        if (abs(state[0]) > 3 or abs(state[1]) > 3 or state[2] > 2.5 # Truncate when the drone is too far away
+        if (abs(state[0]) > 10 or abs(state[1]) > 10 or state[2] > 2.5 # Truncate when the drone is too far away
         ):
             #print(  f"Truncated: pos {state[0:3]}, angles {state[7:10]}")
             return True
@@ -208,6 +209,10 @@ class HoverAviary(BaseRLAviary):
         ):
             return True
         if state[2] < 0.05:
+            return True
+        
+        if self.lidar is not None and np.min(self.lidar) < 0.5: # Truncate if the drone is about to collide with something
+            print(f"Truncated: obstacle detected at distance {self.lidar}")
             return True
             
         if self.step_counter/self.PYB_FREQ > self.EPISODE_LEN_SEC:

@@ -33,7 +33,7 @@ class BaseAviary(gym.Env):
                  ctrl_freq: int = 240,
                  gui=False,
                  record=False,
-                 obstacles=False,
+                 obstacles=True,
                  user_debug_gui=True,
                  vision_attributes=False,
                  output_folder='results'
@@ -126,6 +126,8 @@ class BaseAviary(gym.Env):
             self.MAX_XY_TORQUE = (2*self.L*self.KF*self.MAX_RPM**2)/np.sqrt(2)
         self.MAX_Z_TORQUE = (2*self.KM*self.MAX_RPM**2)
         self.GND_EFF_H_CLIP = 0.25 * self.PROP_RADIUS * np.sqrt((15 * self.MAX_RPM**2 * self.KF * self.GND_EFF_COEFF) / self.MAX_THRUST)
+        self.lidar_ids = [-1]*5
+
         #### Create attributes for vision tasks ####################
         if self.RECORD:
             self.ONBOARD_IMG_PATH = os.path.join(self.OUTPUT_FOLDER, "recording_" + datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
@@ -406,6 +408,7 @@ class BaseAviary(gym.Env):
         info = self._computeInfo()
         #### Advance the step counter ##############################
         self.step_counter = self.step_counter + (1 * self.PYB_STEPS_PER_CTRL)
+        self.lidar = self._update_lidar()
         return obs, reward, terminated, truncated, info
     
     ################################################################################
@@ -493,6 +496,7 @@ class BaseAviary(gym.Env):
         self.last_input_switch = 0
         self.last_clipped_action = np.zeros((self.NUM_DRONES, 4))
         self.gui_input = np.zeros(4)
+        self.lidar = np.zeros((self.NUM_DRONES, 5))
         #### Initialize the drones kinemaatic information ##########
         self.pos = np.zeros((self.NUM_DRONES, 3))
         self.quat = np.zeros((self.NUM_DRONES, 4))
@@ -529,9 +533,56 @@ class BaseAviary(gym.Env):
             # p.setCollisionFilterPair(bodyUniqueIdA=self.PLANE_ID, bodyUniqueIdB=self.DRONE_IDS[i], linkIndexA=-1, linkIndexB=-1, enableCollision=0, physicsClientId=self.CLIENT)
         if self.OBSTACLES:
             self._addObstacles()
+        for i in range(self.NUM_DRONES):
+            self.lidar = self._update_lidar()
+            
     
     ################################################################################
+    def _update_lidar(self):
+        # 1. Obtener el estado actual del dron
+        pos, quat = p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)
+        
+        # 2. Definir los puntos finales de los rayos en coordenadas LOCALES (relativas al dron)
+        # [x, y, z] -> Suponiendo X=frente, Y=izquierda, Z=arriba
+        locales = [
+            [0, 0, -1],  # Abajo
+            [0, 1, 0],   # Izquierda
+            [0, -1, 0],  # Derecha
+            [-1, 0, 0],  # Atrás
+            [1, 0, 0]    # Frente
+        ]
+        
+        ray_to_list = []
+        for loc_point in locales:
+            # multiplyTransforms combina (pos1, quat1) con (pos2, quat2)
+            # Como solo queremos rotar un punto, pasamos un cuaternión nulo [0,0,0,1]
+            global_ray_to, _ = p.multiplyTransforms(pos, quat, loc_point, [0, 0, 0, 1])
+            ray_to_list.append(global_ray_to)
 
+        ray_from_list = [pos] * 5
+
+        # 3. Test de rayos
+        result = p.rayTestBatch(ray_from_list, ray_to_list, physicsClientId=self.CLIENT)
+
+        # 4. Extraer distancias
+        dist_al_suelo = result[0][2] * 1 if result[0][0] != -1 else 1
+        dist_left     = result[1][2] * 1 if result[1][0] != -1 else 1
+        dist_right    = result[2][2] * 1 if result[2][0] != -1 else 1
+        dist_back     = result[3][2] * 1 if result[3][0] != -1 else 1
+        dist_front    = result[4][2] * 1 if result[4][0] != -1 else 1
+
+        # Visualización
+        if self.GUI:
+            for i in range(5):
+                color = [1, 0, 0] if result[i][0] != -1 else [0, 1, 0]
+                self.lidar_ids[i] = p.addUserDebugLine(
+                    pos, ray_to_list[i], color, 
+                    physicsClientId=self.CLIENT, 
+                    replaceItemUniqueId=self.lidar_ids[i]
+                )        
+        return dist_al_suelo, dist_left, dist_right, dist_back, dist_front
+        
+    
     def _updateAndStoreKinematicInformation(self):
         """Updates and stores the drones kinemaatic information.
 
@@ -774,13 +825,47 @@ class BaseAviary(gym.Env):
         return self.wind_force
     ################################################################################
     def _wind(self, wind_force):
-         p.applyExternalForce(self.DRONE_IDS[0],
+        p.applyExternalForce(self.DRONE_IDS[0],
                 -1,  # -1 = centro de masa
                 forceObj=wind_force,
                 posObj=[0, 0, 0],
                 flags=p.LINK_FRAME,
                 physicsClientId=self.CLIENT
             )
+         
+         
+        # 2. Dibujar la flecha de visualización si el GUI está activo
+        if self.GUI:
+            # Obtenemos la posición actual del dron para el origen de la flecha
+            pos, quat = p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)
+            
+            # Calculamos el punto final de la flecha en el mundo (World Frame)
+            # Como wind_force está en LINK_FRAME, lo rotamos para que coincida visualmente
+            wind_direction_global, _ = p.multiplyTransforms([0, 0, 0], quat, wind_force, [0, 0, 0, 1])
+            
+            # Escalamos la flecha para que sea visible (ejemplo: multiplicar por 0.5 o 2 según la magnitud)
+            scale = 20 
+            arrow_end = [
+                pos[0] + wind_direction_global[0] * -scale,
+                pos[1] + wind_direction_global[1] * -scale,
+                pos[2] + wind_direction_global[2] * -scale
+            ]
+
+            # Inicializar el ID de la línea si no existe en el __init__
+            if not hasattr(self, 'wind_line_id'):
+                self.wind_line_id = -1
+
+            # Dibujamos o actualizamos la línea (color azul para el viento)
+            self.wind_line_id = p.addUserDebugLine(
+                pos, 
+                arrow_end, 
+                lineColorRGB=[0, 0, 1], 
+                lineWidth=2,
+                lifeTime=0, # 0 para que sea permanente hasta que se reemplace
+                replaceItemUniqueId=self.wind_line_id,
+                physicsClientId=self.CLIENT
+            )
+            
     def _groundEffect(self,
                       rpm,
                       nth_drone
