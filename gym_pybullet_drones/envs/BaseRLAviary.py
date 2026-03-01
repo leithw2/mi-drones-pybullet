@@ -107,22 +107,22 @@ class BaseRLAviary(BaseAviary):
         """
         if True:
             p.loadURDF("block.urdf",
-                       [5, -0.5, 0.5],
+                       [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
                        p.getQuaternionFromEuler([0, 0, 0]),
-                       physicsClientId=self.CLIENT, globalScaling=20
+                       physicsClientId=self.CLIENT, globalScaling=30
                        )
             p.loadURDF("cube_small.urdf",
-                       [1.5, 0.5, 0.5],
+                       [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]),np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
                        p.getQuaternionFromEuler([0, 0, 0]),
                        physicsClientId=self.CLIENT, globalScaling=20
                        )
             p.loadURDF("duck_vhacd.urdf",
-                       [3, 0, 0.5],
+                       [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
                        p.getQuaternionFromEuler([1, 0, 0]),
                        physicsClientId=self.CLIENT, globalScaling=20
                        )
             p.loadURDF("teddy_vhacd.urdf",
-                       [4, 0, 0.5],
+                       [ np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
                        p.getQuaternionFromEuler([2, 0, 0]),
                        physicsClientId=self.CLIENT, globalScaling=20
                        )

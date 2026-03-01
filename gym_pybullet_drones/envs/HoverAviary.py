@@ -88,9 +88,9 @@ class HoverAviary(BaseRLAviary):
         
         if self.random_targets:
             self.TARGET_POS = np.array([
-                np.random.uniform(6, 10),
-                np.random.uniform(-1, 1),
-                np.random.uniform(0.1, 2.5)
+                np.random.uniform(-3, 3),
+                np.random.uniform(-3, 3),
+                np.random.uniform(0.5, 2.5)
             ])
         else:
             self.TARGET_POS = np.array([0,0,1])
@@ -131,33 +131,41 @@ class HoverAviary(BaseRLAviary):
         if dist < self._best_dist:
             reward_dist = 0.1  # Mayor recompensa por acercarse
             self._best_dist = dist
-        elif dist > self._best_dist + 0.03:
+        elif dist > self._best_dist + 0.05:
             reward_dist = -0.1  # Mayor penalización por alejarse
 
 
-        base_reward = max(0.00, (65 - dist**2)*0.04)
+        base_reward = max(0.00, (30 - dist**2)*0.08)
         #print(f"Base reward: {base_reward}")
         #print(f"Distance: {dist}")
         # Penalización por velocidad (para evitar tambaleo)
-        speed_penalty = -0.05 * np.linalg.norm(vel)
+        speed_penalty = -0.1 * np.linalg.norm(vel)
 
         # Penalización por inclinación (roll y pitch, no yaw)
-        angle_penalty = -.50 * (abs(angles[0]) + abs(angles[1]))
+        angle_penalty = -.2 * (abs(angles[0]) + abs(angles[1]))
 
         # Recompensa extra si está muy cerca y estable
         bonus = 0.0
         if self.random_targets:
-           
+            r = 0.2  # radio del cubo de colisión
+            aabb_min = self.TARGET_POS - r
+            aabb_max = self.TARGET_POS + r
             if dist < 0.08 and np.linalg.norm(vel) < 0.2 and abs(angles[0]) < 0.2 and abs(angles[1]) < 0.2:
                 bonus = 1500
-                self.TARGET_POS = np.array([np.random.uniform(6, 10),np.random.uniform(-1,1),np.random.uniform(1, 2.5)])
+                for i in range(10):  # Dibuja el nuevo objetivo varias veces para asegurarse de que se vea
+                    colisiones = p.getOverlappingObjects(aabb_min, aabb_max, physicsClientId=self.CLIENT)
+                    if colisiones:
+                        self.TARGET_POS = np.array([np.random.uniform(-3, 3),np.random.uniform(-3,3),np.random.uniform(0.5, 2.5)])
+                    else:
+                        break
+
                 self._draw_target_marker()
                 print(f"New target position: {self.TARGET_POS}")
         else:
             
             if dist < 0.05 and np.linalg.norm(vel) < 0.1 and abs(angles[0]) < 0.1 and abs(angles[1]) < 0.1:
                 bonus = 2
-                #print("Hovering achieved!")
+                print("Hovering achieved!")
             else:
                 #print("try Hovering!")
                 pass
@@ -166,7 +174,11 @@ class HoverAviary(BaseRLAviary):
         if state[2] < 0.05:
             penalty = -100
         else:
-            penalty = 0.01
+            penalty = -0.01
+            
+        if self.lidar is not None and np.min(self.lidar) < 0.5: # the drone is about to collide with something
+            #print(f"penalty: obstacle detected at distance {self.lidar}")
+            penalty = -5
         #print(f"dist: {dist}, reward_dist: {reward_dist}, speed_penalty: {speed_penalty}, angle_penalty: {angle_penalty}, bonus: {bonus}, base_reward: {base_reward}, Total: {base_reward + penalty + reward_dist + speed_penalty + angle_penalty + bonus}")
         return base_reward + penalty + reward_dist + speed_penalty + angle_penalty + bonus
         
@@ -183,8 +195,8 @@ class HoverAviary(BaseRLAviary):
 
         """
         state = self._getDroneStateVector(0)
-        if np.linalg.norm(self.TARGET_POS-state[0:3]) < .0001:
-            return False # Nunca termina
+        if np.linalg.norm(self.TARGET_POS-state[0:3]) < .001:
+            return False 
         else:
             return False
     ################################################################################
@@ -202,16 +214,18 @@ class HoverAviary(BaseRLAviary):
         state = self._getDroneStateVector(0)
         if (abs(state[0]) > 10 or abs(state[1]) > 10 or state[2] > 2.5 # Truncate when the drone is too far away
         ):
-            #print(  f"Truncated: pos {state[0:3]}, angles {state[7:10]}")
+            #print(  f"Truncated far away: pos {state[0:3]}, angles {state[7:10]}")
             return True
         
-        if (abs(state[7]) > .7 or abs(state[8]) > .7 # Truncate when the drone is too tilted
-        ):
-            return True
+        # if (abs(state[7]) > .7 or abs(state[8]) > .7 # Truncate when the drone is too tilted
+        # ):
+        #     #print(  f"Truncated tilted: pos {state[0:3]}, angles {state[7:10]}")
+        #     return True
         if state[2] < 0.05:
+            #print(  f"Truncated height: pos {state[0:3]}, angles {state[7:10]}")
             return True
         
-        if self.lidar is not None and np.min(self.lidar) < 0.5: # Truncate if the drone is about to collide with something
+        if self.lidar is not None and np.min(self.lidar) < 0.1: # Truncate if the drone is about to collide with something
             print(f"Truncated: obstacle detected at distance {self.lidar}")
             return True
             

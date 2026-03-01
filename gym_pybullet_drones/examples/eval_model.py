@@ -22,7 +22,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video,
-                               initial_xyzs=np.array([[0,0,1]]),
+                               initial_xyzs=np.array([[0,0,.6]]),
                                initial_rpys=np.array([[0,0,0]]),
                                random_targets=True, physics=Physics.PYB)
     else:
@@ -79,7 +79,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs12_8_lidar_nowind_randtarget_save-02.27.2026_18.19.22', 'best_model'), help='Ruta al archivo .zip del modelo PPO')
+    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs17_12_lidar_nowind_randtarget_save-02.28.2026_12.02.07', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
     parser.add_argument('--record_video', default=True, type=bool, help='Grabar video (default: False)')
