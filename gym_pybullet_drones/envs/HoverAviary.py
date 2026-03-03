@@ -88,8 +88,8 @@ class HoverAviary(BaseRLAviary):
         
         if self.random_targets:
             self.TARGET_POS = np.array([
-                np.random.uniform(-3, 3),
-                np.random.uniform(-3, 3),
+                np.random.uniform(-2, 2),
+                np.random.uniform(-2, 2),
                 np.random.uniform(0.5, 2.5)
             ])
         else:
@@ -155,7 +155,7 @@ class HoverAviary(BaseRLAviary):
                 for i in range(10):  # Dibuja el nuevo objetivo varias veces para asegurarse de que se vea
                     colisiones = p.getOverlappingObjects(aabb_min, aabb_max, physicsClientId=self.CLIENT)
                     if colisiones:
-                        self.TARGET_POS = np.array([np.random.uniform(-3, 3),np.random.uniform(-3,3),np.random.uniform(0.5, 2.5)])
+                        self.TARGET_POS = np.array([np.random.uniform(-2, 2),np.random.uniform(-2,2),np.random.uniform(0.5, 2.5)])
                     else:
                         break
 
@@ -195,6 +195,24 @@ class HoverAviary(BaseRLAviary):
 
         """
         state = self._getDroneStateVector(0)
+        if (abs(state[0]) > 10 or abs(state[1]) > 10 or state[2] > 2.5 # Truncate when the drone is too far away
+        ):
+            #print(  f"Truncated far away: pos {state[0:3]}, angles {state[7:10]}")
+            return True
+        
+        if (abs(state[7]) > .7 or abs(state[8]) > .7 # Truncate when the drone is too tilted
+        ):
+            #print(  f"Truncated tilted: pos {state[0:3]}, angles {state[7:10]}")
+            return True
+        
+        if state[2] < 0.05:
+            #print(  f"Truncated height: pos {state[0:3]}, angles {state[7:10]}")
+            return True
+        
+        if self.lidar is not None and np.min(self.lidar) < 0.1: # Truncate if the drone is about to collide with something
+            print(f"Truncated: obstacle detected at distance {self.lidar}")
+            return True
+        
         if np.linalg.norm(self.TARGET_POS-state[0:3]) < .001:
             return False 
         else:
@@ -211,23 +229,7 @@ class HoverAviary(BaseRLAviary):
 
         """
         
-        state = self._getDroneStateVector(0)
-        if (abs(state[0]) > 10 or abs(state[1]) > 10 or state[2] > 2.5 # Truncate when the drone is too far away
-        ):
-            #print(  f"Truncated far away: pos {state[0:3]}, angles {state[7:10]}")
-            return True
         
-        # if (abs(state[7]) > .7 or abs(state[8]) > .7 # Truncate when the drone is too tilted
-        # ):
-        #     #print(  f"Truncated tilted: pos {state[0:3]}, angles {state[7:10]}")
-        #     return True
-        if state[2] < 0.05:
-            #print(  f"Truncated height: pos {state[0:3]}, angles {state[7:10]}")
-            return True
-        
-        if self.lidar is not None and np.min(self.lidar) < 0.1: # Truncate if the drone is about to collide with something
-            print(f"Truncated: obstacle detected at distance {self.lidar}")
-            return True
             
         if self.step_counter/self.PYB_FREQ > self.EPISODE_LEN_SEC:
             return True

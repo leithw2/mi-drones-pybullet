@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import pybullet as p
+import pkg_resources
+
 from gymnasium import spaces
 from collections import deque
 
@@ -105,30 +107,54 @@ class BaseRLAviary(BaseAviary):
         Overrides BaseAviary's method.
 
         """
+        randoms_obstacles= False
         if True:
-            p.loadURDF("block.urdf",
-                       [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
-                       p.getQuaternionFromEuler([0, 0, 0]),
-                       physicsClientId=self.CLIENT, globalScaling=30
-                       )
-            p.loadURDF("cube_small.urdf",
-                       [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]),np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
-                       p.getQuaternionFromEuler([0, 0, 0]),
-                       physicsClientId=self.CLIENT, globalScaling=20
-                       )
-            p.loadURDF("duck_vhacd.urdf",
-                       [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
-                       p.getQuaternionFromEuler([1, 0, 0]),
-                       physicsClientId=self.CLIENT, globalScaling=20
-                       )
-            p.loadURDF("teddy_vhacd.urdf",
-                       [ np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
-                       p.getQuaternionFromEuler([2, 0, 0]),
-                       physicsClientId=self.CLIENT, globalScaling=20
-                       )
-        else:
-            pass
+            if randoms_obstacles:
+                p.loadURDF("block.urdf",
+                        [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
+                        p.getQuaternionFromEuler([0, 0, 0]),
+                        physicsClientId=self.CLIENT, globalScaling=30
+                        )
+                p.loadURDF("cube_small.urdf",
+                        [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]),np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
+                        p.getQuaternionFromEuler([0, 0, 0]),
+                        physicsClientId=self.CLIENT, globalScaling=20
+                        )
+                p.loadURDF("duck_vhacd.urdf",
+                        [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
+                        p.getQuaternionFromEuler([1, 0, 0]),
+                        physicsClientId=self.CLIENT, globalScaling=20
+                        )
+                # p.loadURDF("teddy_vhacd.urdf",
+                #            [ np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
+                #            p.getQuaternionFromEuler([2, 0, 0]),
+                #            physicsClientId=self.CLIENT, globalScaling=20
+                #            )
 
+                
+            else:
+                # 1. Crear la forma visual
+                visual_id = p.createVisualShape(
+                    shapeType=p.GEOM_MESH,
+                    fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
+                    meshScale=[2, 2, 2]
+                )
+
+                # 2. Crear la forma de colisión FORZANDO malla cóncava (Trimesh)
+                collision_id = p.createCollisionShape(
+                    shapeType=p.GEOM_MESH,
+                    fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
+                    meshScale=[2, 2, 2],
+                    flags=p.GEOM_FORCE_CONCAVE_TRIMESH  # <--- ESTO SOLUCIONA EL "AIRE SÓLIDO"
+                )
+
+                # 3. Crear el cuerpo en el mundo
+                mapa_id = p.createMultiBody(
+                    baseMass=0,
+                    baseCollisionShapeIndex=collision_id,
+                    baseVisualShapeIndex=visual_id,
+                    basePosition=[2*4.5, 2*4.5, 0.01]
+                )
     ################################################################################
 
     def _actionSpace(self):
