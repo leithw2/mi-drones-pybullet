@@ -154,8 +154,8 @@ class BaseAviary(gym.Env):
                 p.configureDebugVisualizer(i, 0, physicsClientId=self.CLIENT)
             p.resetDebugVisualizerCamera(cameraDistance=3,
                                          cameraYaw=-30,
-                                         cameraPitch=-30,
-                                         cameraTargetPosition=[0, 0, 0],
+                                         cameraPitch=-50,
+                                         cameraTargetPosition=[.5, .5, 3],
                                          physicsClientId=self.CLIENT
                                          )
             ret = p.getDebugVisualizerCamera(physicsClientId=self.CLIENT)

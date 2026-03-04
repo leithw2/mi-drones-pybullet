@@ -9,6 +9,7 @@ from gym_pybullet_drones.utils.Logger import Logger
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType
 from gym_pybullet_drones.utils.utils import sync
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType, Physics
+from RewardPlotter import RewardPlotter
 
 import time
 import os
@@ -37,6 +38,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
     #             colab=colab)
     import os
     print("Directorio actual:", os.getcwd())
+    plotter = RewardPlotter(title="Reward en Tiempo Real")
     model = PPO.load(model_path, env=test_env, device="cpu", verbose=0)
     for ep in range(episodes):
         obs, info = test_env.reset(seed=ep, options={})
@@ -67,6 +69,9 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
             #                                     obs2[d][3:12],
             #                                     act2[d]]),
             #                 control=np.zeros(12))
+            
+            if i % 1 == 0: # Solo grafica cada 10 pasos
+                plotter.update(total_reward)
             if hasattr(test_env, 'render'):
                 test_env.render()
             sync(i, start, test_env.CTRL_TIMESTEP * speed_factor)
@@ -79,7 +84,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs17_NewPolicy_24x12_lidar_nowind_randtarget_save-03.03.2026_09.16.37', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
+    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs17_NewPolicy_newMap_24x12_lidar_nowind_randtarget_save-03.03.2026_18.07.09', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
     parser.add_argument('--record_video', default=True, type=bool, help='Grabar video (default: False)')

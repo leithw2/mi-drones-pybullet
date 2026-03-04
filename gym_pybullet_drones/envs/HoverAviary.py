@@ -53,6 +53,7 @@ class HoverAviary(BaseRLAviary):
         self.EPISODE_LEN_SEC = 30
         self._best_dist = None  # Initialize the best distance to None
         self.step_count = 0
+        
         super().__init__(drone_model=drone_model,
                          num_drones=1,
                          initial_xyzs=initial_xyzs,
@@ -80,18 +81,35 @@ class HoverAviary(BaseRLAviary):
             lineWidth=1,
             lifeTime=0  # 0 = permanente hasta que se borre
         )
-        # Opcional: también puedes usar addUserDebugText para mostrar coordenadas
-        self._target_text_id = p.addUserDebugText(str(self.TARGET_POS), self.TARGET_POS, [0,0,0], 0.5)
+        
+        point_debug = p.addUserDebugPoints(
+                            pointPositions=self.TARGET_POS.reshape(1,3),
+                            pointColorsRGB=[[0,1,0]],
+                            pointSize=10,
+                            lifeTime=0
+                        )      
+        
+        # self._target_text_id = p.addUserDebugText(str(self.TARGET_POS), self.TARGET_POS, [0,0,0], 0.5)
 
     def reset(self, *args, **kwargs):
         # Cambia el objetivo a un punto aleatorio en cada episodio
-        
+        self.TEST_BODY = p.createCollisionShape(p.GEOM_SPHERE, radius=0.01)
+        self.TEST_BODY_ID = p.createMultiBody(baseMass=0, 
+                                      baseCollisionShapeIndex=self.TEST_BODY, 
+                                      basePosition=[0, 0, -10], # Escondido bajo el suelo
+                                      physicsClientId=self.CLIENT)
         if self.random_targets:
-            self.TARGET_POS = np.array([
-                np.random.uniform(-2, 2),
-                np.random.uniform(-2, 2),
-                np.random.uniform(0.5, 2.5)
-            ])
+            self.TARGET_POS = np.array([np.random.uniform(0, 2),np.random.uniform(0,2),np.random.uniform(0.5, 2.5)])
+            r = .4  # radio del cubo de colisión
+            for i in range(1000):  # Intenta encontrar un punto aleatorio sin colisiones
+                    if self._is_space_clear(self.TARGET_POS, radius=r):
+                        self._draw_target_marker()
+                        break
+                    else:
+                        print(f"colisiones: {self.TARGET_POS}")
+                        self.TARGET_POS = np.array([np.random.uniform(0, 2),np.random.uniform(0,2),np.random.uniform(0.5, 2.5)])      
+
+                        
         else:
             self.TARGET_POS = np.array([0,0,1])
         
@@ -105,6 +123,46 @@ class HoverAviary(BaseRLAviary):
     """Single agent RL problem: hover at position."""
 
     ################################################################################
+    
+    def _is_space_clear(self, pos, radius=0.15, ignore_ids=[]):
+        """
+        Verifica si una posición en el espacio está libre de obstáculos reales (mallas).
+        
+        Args:
+            pos (list/np.array): Posición [x, y, z] a testear.
+            radius (float): Radio de seguridad alrededor del punto.
+            ignore_ids (list): IDs de PyBullet que NO deben contar como colisión (ej. el marcador del target).
+            
+        Returns:
+            bool: True si el espacio está limpio, False si hay algo cerca.
+        """
+        # 1. Teletransportar el sensor a la ubicación de prueba
+        p.resetBasePositionAndOrientation(self.TEST_BODY_ID, pos, [0, 0, 0, 1], physicsClientId=self.CLIENT)
+        
+        bodys = []
+        for i in range(p.getNumBodies(physicsClientId=self.CLIENT)):
+            # 2. Obtener puntos más cercanos contra todos los objetos en la escena
+            puntos = p.getClosestPoints(bodyA=self.TEST_BODY_ID, 
+                                    bodyB=p.getBodyUniqueId(i), 
+                                    distance=radius, 
+                                    physicsClientId=self.CLIENT)
+            if len(puntos) > 0:
+                break
+        
+        # 3. Mover el sensor de vuelta al "limbo" para que no estorbe
+        p.resetBasePositionAndOrientation(self.TEST_BODY_ID, [0, 0, -10], [0, 0, 0, 1], physicsClientId=self.CLIENT)
+
+        # 4. Filtrar resultados
+        for p_contact in puntos:
+            id_detectado = p_contact[2] # ID del objeto con el que chocó
+            # Si el objeto detectado no es el sensor mismo ni está en la lista de ignorados
+            if id_detectado != self.TEST_BODY_ID and id_detectado not in ignore_ids:
+                return False # Se detectó un obstáculo real
+        
+        return True # El espacio está despejado
+    
+    
+    
     def _computeReward(self):
         """Computes the current reward value.
 
@@ -129,10 +187,10 @@ class HoverAviary(BaseRLAviary):
         # Recompensa por acercarse y penalización por alejarse
         reward_dist = 0.0
         if dist < self._best_dist:
-            reward_dist = 0.1  # Mayor recompensa por acercarse
+            reward_dist = 0.5  # Mayor recompensa por acercarse
             self._best_dist = dist
         elif dist > self._best_dist + 0.05:
-            reward_dist = -0.1  # Mayor penalización por alejarse
+            reward_dist = -3  # Mayor penalización por alejarse
 
 
         base_reward = max(0.00, (30 - dist**2)*0.08)
@@ -147,18 +205,18 @@ class HoverAviary(BaseRLAviary):
         # Recompensa extra si está muy cerca y estable
         bonus = 0.0
         if self.random_targets:
-            r = 0.2  # radio del cubo de colisión
-            aabb_min = self.TARGET_POS - r
-            aabb_max = self.TARGET_POS + r
+            r = 0.4  # radio del cubo de colisión
             if dist < 0.08 and np.linalg.norm(vel) < 0.2 and abs(angles[0]) < 0.2 and abs(angles[1]) < 0.2:
+                old_target = self.TARGET_POS.copy()
                 bonus = 1500
-                for i in range(10):  # Dibuja el nuevo objetivo varias veces para asegurarse de que se vea
-                    colisiones = p.getOverlappingObjects(aabb_min, aabb_max, physicsClientId=self.CLIENT)
-                    if colisiones:
-                        self.TARGET_POS = np.array([np.random.uniform(-2, 2),np.random.uniform(-2,2),np.random.uniform(0.5, 2.5)])
-                    else:
-                        break
-
+                if self.random_targets:
+                    for i in range(1000):  # Intenta encontrar un punto aleatorio sin colisiones
+                            self.TARGET_POS = np.array([old_target[0]+np.random.uniform(0, 2), old_target[1]+np.random.uniform(0, 2), np.random.uniform(-0.5, 0.5)])        
+                            if not self._is_space_clear(self.TARGET_POS, radius=r):
+                                self.TARGET_POS = np.array([old_target[0]+np.random.uniform(-0, 2), old_target[1]+np.random.uniform(0, 2), np.random.uniform(-0.5, 0.5)])        
+                            else:
+                                # print(f"Objetivo colocado sin colisiones: {self.TARGET_POS}")       
+                                break
                 self._draw_target_marker()
                 print(f"New target position: {self.TARGET_POS}")
         else:
@@ -176,7 +234,7 @@ class HoverAviary(BaseRLAviary):
         else:
             penalty = -0.01
             
-        if self.lidar is not None and np.min(self.lidar) < 0.5: # the drone is about to collide with something
+        if self.lidar is not None and np.min(self.lidar) < 0.3: # the drone is about to collide with something
             #print(f"penalty: obstacle detected at distance {self.lidar}")
             penalty = -5
         #print(f"dist: {dist}, reward_dist: {reward_dist}, speed_penalty: {speed_penalty}, angle_penalty: {angle_penalty}, bonus: {bonus}, base_reward: {base_reward}, Total: {base_reward + penalty + reward_dist + speed_penalty + angle_penalty + bonus}")
@@ -209,7 +267,7 @@ class HoverAviary(BaseRLAviary):
             #print(  f"Truncated height: pos {state[0:3]}, angles {state[7:10]}")
             return True
         
-        if self.lidar is not None and np.min(self.lidar) < 0.1: # Truncate if the drone is about to collide with something
+        if self.lidar is not None and np.min(self.lidar) < 0.15: # Truncate if the drone is about to collide with something
             print(f"Truncated: obstacle detected at distance {self.lidar}")
             return True
         

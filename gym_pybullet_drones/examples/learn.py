@@ -183,8 +183,8 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs17_24x12_lidar_nowind_randtarget_save-03.02.2026_22.06.19')
-CONTINUE_FROM = None # None or path to saved model folder
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs17_NewPolicy_newMap_24x12_lidar_nowind_randtarget_save-03.03.2026_18.07.09')
+#CONTINUE_FROM = None # None or path to saved model folder
 RANDOM_TARGETS=True
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, continue_from=None):
@@ -194,7 +194,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'obs17_NewPolicy_24x12_lidar_nowind_randtarget_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'obs17_NewPolicy_newMap_24x12_lidar_nowind_randtarget_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
@@ -334,12 +334,12 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         tb_callback = TensorboardCallback(tb_log_dir=filename+'/tb/', log_freq=2000)
         if use_render_callback:
             train_render_callback = TrainRenderCallback(train_env, sync_human_speed=False)
-            model.learn(total_timesteps=int(1e7) if local else int(1e2),
+            model.learn(total_timesteps=int(3e7) if local else int(1e2),
                         callback=[eval_callback, train_render_callback ],
                         log_interval=100,
                         reset_num_timesteps=False if continue_from else True)
         else:
-            model.learn(total_timesteps=int(1e7) if local else int(1e2),
+            model.learn(total_timesteps=int(3e7) if local else int(1e2),
                         callback=[eval_callback],
                         log_interval=100,
                         reset_num_timesteps=False if continue_from else True)
