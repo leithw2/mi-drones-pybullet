@@ -53,6 +53,7 @@ class HoverAviary(BaseRLAviary):
         self.EPISODE_LEN_SEC = 30
         self._best_dist = None  # Initialize the best distance to None
         self.step_count = 0
+        self.score = 1
         
         super().__init__(drone_model=drone_model,
                          num_drones=1,
@@ -92,6 +93,7 @@ class HoverAviary(BaseRLAviary):
         # self._target_text_id = p.addUserDebugText(str(self.TARGET_POS), self.TARGET_POS, [0,0,0], 0.5)
 
     def reset(self, *args, **kwargs):
+        self.score = 1
         # Cambia el objetivo a un punto aleatorio en cada episodio
         self.TEST_BODY = p.createCollisionShape(p.GEOM_SPHERE, radius=0.01)
         self.TEST_BODY_ID = p.createMultiBody(baseMass=0, 
@@ -206,9 +208,10 @@ class HoverAviary(BaseRLAviary):
         bonus = 0.0
         if self.random_targets:
             r = 0.4  # radio del cubo de colisión
-            if dist < 0.08 and np.linalg.norm(vel) < 0.2 and abs(angles[0]) < 0.2 and abs(angles[1]) < 0.2:
+            if dist < 0.1 and np.linalg.norm(vel) < 0.4 and abs(angles[0]) < 0.2 and abs(angles[1]) < 0.2:
                 old_target = self.TARGET_POS.copy()
-                bonus = 1500
+                bonus = 500 * self.score
+                self.score += 1
                 if self.random_targets:
                     for i in range(1000):  # Intenta encontrar un punto aleatorio sin colisiones
                             self.TARGET_POS = np.array([old_target[0]+np.random.uniform(0, 2), old_target[1]+np.random.uniform(0, 2), np.random.uniform(-0.5, 0.5)])        
@@ -236,7 +239,7 @@ class HoverAviary(BaseRLAviary):
             
         if self.lidar is not None and np.min(self.lidar) < 0.3: # the drone is about to collide with something
             #print(f"penalty: obstacle detected at distance {self.lidar}")
-            penalty = -5
+            penalty = -5* (0.3 - np.min(self.lidar)) # penalización proporcional a lo cerca que esté el obstáculo, con un máximo de -5 cuando el obstáculo está a 0.0m de distancia
         #print(f"dist: {dist}, reward_dist: {reward_dist}, speed_penalty: {speed_penalty}, angle_penalty: {angle_penalty}, bonus: {bonus}, base_reward: {base_reward}, Total: {base_reward + penalty + reward_dist + speed_penalty + angle_penalty + bonus}")
         return base_reward + penalty + reward_dist + speed_penalty + angle_penalty + bonus
         

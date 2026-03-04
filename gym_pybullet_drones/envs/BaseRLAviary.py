@@ -64,8 +64,8 @@ class BaseRLAviary(BaseAviary):
             The type of action space (1 or 3D; RPMS, thurst and torques, waypoint or velocity with PID control; etc.)
 
         """
-        #### Create a buffer for the last .5 sec of actions ########
-        self.ACTION_BUFFER_SIZE = int(0)
+        #### Create a buffer ########
+        self.ACTION_BUFFER_SIZE = int(1) # buffer of the last n actions, to be added to the observation space for non-Markovian formulations of the problem
         self.action_buffer = deque(maxlen=self.ACTION_BUFFER_SIZE)
         ####
         # Initialize TARGET_POS to avoid attribute errors

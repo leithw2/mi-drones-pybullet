@@ -183,8 +183,8 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs17_NewPolicy_newMap_24x12_lidar_nowind_randtarget_save-03.03.2026_18.07.09')
-#CONTINUE_FROM = None # None or path to saved model folder
+#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs17_NewPolicy_newMap_24x12_lidar_nowind_randtarget_save-03.03.2026_18.07.09')
+CONTINUE_FROM = None # None or path to saved model folder
 RANDOM_TARGETS=True
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, continue_from=None):
@@ -194,7 +194,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'obs17_NewPolicy_newMap_24x12_lidar_nowind_randtarget_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'obs21_bufferAction1_24x12_lidar_nowind_map_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
@@ -377,9 +377,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video,
-                               random_targets=RANDOM_TARGETS,
-                               physics=physics,
-                               )
+                               initial_xyzs=np.array([[0,0,2]]),
+                               initial_rpys=np.array([[0,0,0]]),
+                               random_targets=True, physics=Physics.PYB)
         test_env_nogui = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT)
     else:
         test_env = MultiHoverAviary(gui=True,
