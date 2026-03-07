@@ -65,6 +65,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.utils import constant_fn
 
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
 from stable_baselines3.common.evaluation import evaluate_policy
@@ -74,6 +75,7 @@ from gym_pybullet_drones.envs.HoverAviary import HoverAviary
 from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
 from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType
+
 
 # Device autodetection and PyTorch perf tweaks
 print("CUDA available:", torch.cuda.is_available())
@@ -183,9 +185,9 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs17_NewPolicy_newMap_24x12_lidar_nowind_randtarget_save-03.03.2026_18.07.09')
+#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.05.2026_10.24.05')
 CONTINUE_FROM = None # None or path to saved model folder
-RANDOM_TARGETS=True
+RANDOM_TARGETS=False
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, continue_from=None):
     # Si se especifica un modelo para continuar, usar ese path, si no, crear uno nuevo
@@ -194,7 +196,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'obs21_bufferAction1_24x12_lidar_nowind_map_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
@@ -237,6 +239,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if continue_from and os.path.isfile(os.path.join(filename, 'final_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'final_model.zip')}")
         model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device=DEVICE)
+        # 2. Modificar parámetros (Fine-tuning)
+        # model.learning_rate = 0.0001  # Bajamos la tasa para mayor estabilidad
+        # model.ent_coef = 0.001       # Reducimos la exploración aleatoria
+        # model.clip_range = constant_fn(0.2)
         # El modelo ya contiene num_timesteps internamente
         model.tensorboard_log = filename+'/tb/'
     else:
@@ -244,14 +250,14 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                 train_env,
                 device=DEVICE,
                 tensorboard_log=filename+'/tb/',
-                n_steps=int(8192),          # Aumentado para mejor uso de GPU
+                n_steps=int(512),          # Aumentado para mejor uso de GPU
                 batch_size=int(256),
                 n_epochs=int(10),        # Menos épocas por update, más datos por epoch
                 gae_lambda=0.95,
                     learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
                     #learning_rate=0.0001,
                     policy_kwargs=dict(
-                        net_arch=[dict(pi=[24,12], vf=[16, 16])],
+                        net_arch=[dict(pi=[24,12], vf=[64, 64])],
                         activation_fn=torch.nn.Tanh,  # Suaviza salidas
                         ##### TENSORBOARD MOD: Log Histograms y Gráfico #####
                         log_std_init=-2.0, # Valor por defecto, ayuda a la estabilidad
@@ -261,8 +267,8 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                         # SB3 registra estas métricas automáticamente si tensorboard_log está seteado.
                     ),
                     
-                    ent_coef=0.015,
-                    clip_range=0.3,
+                    ent_coef=0.001,
+                    clip_range=0.2,
                     verbose=1)
         # dtype = torch.float16 # Cambiar a torch.float32 para 32 bits, torch.float16 para 16 bits
         # model.policy = model.policy.to(dtype=dtype)
@@ -379,7 +385,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                record=record_video,
                                initial_xyzs=np.array([[0,0,2]]),
                                initial_rpys=np.array([[0,0,0]]),
-                               random_targets=True, physics=Physics.PYB)
+                               random_targets=RANDOM_TARGETS, physics=Physics.PYB)
         test_env_nogui = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT)
     else:
         test_env = MultiHoverAviary(gui=True,

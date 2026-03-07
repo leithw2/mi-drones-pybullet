@@ -403,8 +403,11 @@ class BaseAviary(gym.Env):
         #### Prepare the return values #############################
         obs = self._computeObs()
         reward = self._computeReward()
-        terminated = self._computeTerminated()
+        terminated, penalty = self._computeTerminated()
         truncated = self._computeTruncated()
+        if terminated:
+            reward = reward - penalty
+                        
         info = self._computeInfo()
         #### Advance the step counter ##############################
         self.step_counter = self.step_counter + (1 * self.PYB_STEPS_PER_CTRL)
@@ -545,11 +548,11 @@ class BaseAviary(gym.Env):
         # 2. Definir los puntos finales de los rayos en coordenadas LOCALES (relativas al dron)
         # [x, y, z] -> Suponiendo X=frente, Y=izquierda, Z=arriba
         locales = [
-            [0, 0, -1],  # Abajo
-            [0, 1, 0],   # Izquierda
-            [0, -1, 0],  # Derecha
-            [-1, 0, 0],  # Atrás
-            [1, 0, 0]    # Frente
+            [0, 0, -2],  # Abajo
+            [0, 2, 0],   # Izquierda
+            [0, -2, 0],  # Derecha
+            [-2, 0, 0],  # Atrás
+            [2, 0, 0]    # Frente
         ]
         
         ray_to_list = []
@@ -565,11 +568,11 @@ class BaseAviary(gym.Env):
         result = p.rayTestBatch(ray_from_list, ray_to_list, physicsClientId=self.CLIENT)
 
         # 4. Extraer distancias
-        dist_al_suelo = result[0][2] * 1 if result[0][0] != -1 else 1
-        dist_left     = result[1][2] * 1 if result[1][0] != -1 else 1
-        dist_right    = result[2][2] * 1 if result[2][0] != -1 else 1
-        dist_back     = result[3][2] * 1 if result[3][0] != -1 else 1
-        dist_front    = result[4][2] * 1 if result[4][0] != -1 else 1
+        dist_al_suelo = result[0][2] * 2 if result[0][0] != -1 else 1
+        dist_left     = result[1][2] * 2 if result[1][0] != -1 else 1
+        dist_right    = result[2][2] * 2 if result[2][0] != -1 else 1
+        dist_back     = result[3][2] * 2 if result[3][0] != -1 else 1
+        dist_front    = result[4][2] * 2 if result[4][0] != -1 else 1
 
         # Visualización
         if self.GUI:
@@ -579,7 +582,8 @@ class BaseAviary(gym.Env):
                     pos, ray_to_list[i], color, 
                     physicsClientId=self.CLIENT, 
                     replaceItemUniqueId=self.lidar_ids[i]
-                )        
+                )
+        # print(f"Distancias LIDAR - Suelo: {dist_al_suelo:.2f}, Izquierda: {dist_left:.2f}, Derecha: {dist_right:.2f}, Atrás: {dist_back:.2f}, Frente: {dist_front:.2f}")
         return dist_al_suelo, dist_left, dist_right, dist_back, dist_front
         
     

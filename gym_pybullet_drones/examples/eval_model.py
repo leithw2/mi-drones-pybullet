@@ -23,9 +23,9 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video,
-                               initial_xyzs=np.array([[0,0,2]]),
+                               initial_xyzs=np.array([[0,0,1]]),
                                initial_rpys=np.array([[0,0,0]]),
-                               random_targets=True, physics=Physics.PYB)
+                               random_targets=False, physics=Physics.PYB)
     else:
         test_env = MultiHoverAviary(gui=gui,
                                     num_drones=DEFAULT_AGENTS,
@@ -45,7 +45,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
         start = time.time()
         total_reward = 0
 
-        for i in range(max_steps or (test_env.EPISODE_LEN_SEC+20)*test_env.CTRL_FREQ):
+        for i in range(max_steps or (test_env.EPISODE_LEN_SEC)*test_env.CTRL_FREQ):
             action, _states = model.predict(obs, deterministic=True, )
             obs, reward, terminated, truncated, info = test_env.step(action)
             obs2 = obs.squeeze()
@@ -84,14 +84,14 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs21_bufferAction1_24x12_lidar_nowind_map_save-03.04.2026_09.44.43', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
+    parser.add_argument('--model_path', type=str, default= os.path.join('results','obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.06.2026_19.03.30', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
     parser.add_argument('--record_video', default=True, type=bool, help='Grabar video (default: False)')
     parser.add_argument('--output_folder', default='results', type=str, help='Carpeta de logs')
     parser.add_argument('--colab', default=False, type=bool, help='Modo Colab')
-    parser.add_argument('--episodes', default=3, type=int, help='Cantidad de episodios a evaluar')
+    parser.add_argument('--episodes', default=90, type=int, help='Cantidad de episodios a evaluar')
     parser.add_argument('--max_steps', default=None, type=int, help='Máximo de pasos por episodio')
-    parser.add_argument('--speed_factor', default=1.0, type=float, help='Multiplicador de velocidad de la visualización (1.0=normal, <1.0=rápido, >1.0=lento)')
+    parser.add_argument('--speed_factor', default=1, type=float, help='Multiplicador de velocidad de la visualización (1.0=normal, <1.0=rápido, >1.0=lento)')
     args = parser.parse_args()
     evaluate_model(**vars(args))
