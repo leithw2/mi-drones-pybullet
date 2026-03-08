@@ -107,24 +107,45 @@ class BaseRLAviary(BaseAviary):
         Overrides BaseAviary's method.
 
         """
-        randoms_obstacles= False
+        randoms_obstacles= True
         if True:
             if randoms_obstacles:
-                p.loadURDF("block.urdf",
-                        [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
-                        p.getQuaternionFromEuler([0, 0, 0]),
-                        physicsClientId=self.CLIENT, globalScaling=30
-                        )
+                # p.loadURDF("block.urdf",
+                #         [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
+                #         p.getQuaternionFromEuler([0, 0, 0]),
+                #         physicsClientId=self.CLIENT, globalScaling=30
+                #       )
+                
+                # Definir la colisión (1 metro de lado = halfExtents de 0.5)
+                col_id = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.5])
+                vis_id = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.5], rgbaColor=[0.8, 0.2, 0.2, 1])
+
+                self.cubo_id = p.createMultiBody(baseMass=1, # 0 lo hace estático e inamovible
+                                baseCollisionShapeIndex=col_id,
+                                baseVisualShapeIndex=vis_id,
+                                basePosition=[np.random.uniform(1, 2),np.random.uniform(1, 2), 0.5],
+                                physicsClientId=self.CLIENT)
+                
                 p.loadURDF("cube_small.urdf",
-                        [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]),np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
-                        p.getQuaternionFromEuler([0, 0, 0]),
-                        physicsClientId=self.CLIENT, globalScaling=20
-                        )
-                p.loadURDF("duck_vhacd.urdf",
-                        [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
-                        p.getQuaternionFromEuler([1, 0, 0]),
-                        physicsClientId=self.CLIENT, globalScaling=20
-                        )
+                    [np.random.uniform(2.5, 3),np.random.uniform(2.5, 3), 0.5],
+                    p.getQuaternionFromEuler([0, 0, 0]),
+                    physicsClientId=self.CLIENT, globalScaling=20
+                    )
+                p.loadURDF("cube_small.urdf",
+                    [np.random.uniform(3.5, 4),np.random.uniform(3.5, 4), 0.5],
+                    p.getQuaternionFromEuler([0, 0, 0]),
+                    physicsClientId=self.CLIENT, globalScaling=20
+                    )
+                p.loadURDF("cube_small.urdf",
+                    [np.random.uniform(4.5, 5.5),np.random.uniform(4.5, 5.5), 0.5],
+                    p.getQuaternionFromEuler([0, 0, 0]),
+                    physicsClientId=self.CLIENT, globalScaling=20
+                    )
+                # p.loadURDF("duck_vhacd.urdf",
+                #         [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
+                #         p.getQuaternionFromEuler([1, 0, 0]),
+                #         physicsClientId=self.CLIENT, globalScaling=20
+                #       )
                 # p.loadURDF("teddy_vhacd.urdf",
                 #            [ np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
                 #            p.getQuaternionFromEuler([2, 0, 0]),
@@ -153,7 +174,8 @@ class BaseRLAviary(BaseAviary):
                     baseMass=0,
                     baseCollisionShapeIndex=collision_id,
                     baseVisualShapeIndex=visual_id,
-                    basePosition=[2*4.5, 2*4.5, 0.01]
+                    basePosition=[2*4.5, 2*4.5, 0.01],
+                    baseOrientation=p.getQuaternionFromEuler([0, 0, 0]),
                 )
     ################################################################################
 

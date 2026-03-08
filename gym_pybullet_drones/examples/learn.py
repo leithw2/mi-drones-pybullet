@@ -89,8 +89,8 @@ try:
     torch.backends.cudnn.benchmark = True
 except Exception:
     pass
-N_ENVS = min(16, max(1, (os.cpu_count() or 1)))
-
+#N_ENVS = min(16, max(1, (os.cpu_count() or 1)))
+N_ENVS = 12 # For debugging, set to 1 to avoid multiprocessing issues
 # Callback para loggear en TensorBoard: gráfico del modelo, histogramas de parámetros y LR
 class TensorboardCallback(BaseCallback):
     def __init__(self, tb_log_dir, log_freq=2000, verbose=0):
@@ -185,9 +185,9 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.05.2026_10.24.05')
-CONTINUE_FROM = None # None or path to saved model folder
-RANDOM_TARGETS=False
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.07.2026_09.47.52')
+#CONTINUE_FROM = None # None or path to saved model folder
+RANDOM_TARGETS=True
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, continue_from=None):
     # Si se especifica un modelo para continuar, usar ese path, si no, crear uno nuevo
