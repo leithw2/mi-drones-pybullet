@@ -111,7 +111,7 @@ class HoverAviary(BaseRLAviary):
                                       basePosition=[0, 0, -10], # Escondido bajo el suelo
                                       physicsClientId=self.CLIENT)
         if self.random_targets:
-            self.TARGET_POS = np.array([np.random.uniform(.5, 2),np.random.uniform(0.5, 2),np.random.uniform(0.5, 1.2)])
+            self.TARGET_POS = np.array([np.random.uniform(-6, 6),np.random.uniform(-6, 6),np.random.uniform(0.5, 1.2)])
             r = 0.4  # radio del cubo de colisión
             for i in range(500):  # Intenta encontrar un punto aleatorio sin colisiones
                     if self._is_space_clear(self.TARGET_POS, radius=r):
@@ -122,7 +122,7 @@ class HoverAviary(BaseRLAviary):
                     else:
                         #print(f"colisiones: {self.TARGET_POS}")
                         #self._draw_target_marker([1, 0, 0])
-                        self.TARGET_POS = np.array([np.random.uniform(.5, 2),np.random.uniform(0.5, 2),np.random.uniform(0.5, 1.2)])      
+                        self.TARGET_POS = np.array([np.random.uniform(-6, 6),np.random.uniform(-6, 6),np.random.uniform(0.5, 1.2)])      
 
         
         #print("Nuevo objetivo: " + str(self.TARGET_POS))
@@ -207,25 +207,25 @@ class HoverAviary(BaseRLAviary):
             #print(f"Distance increased from {self._best_dist:.3f} to {dist:.3f} - reward: {reward_dist}")
 
 
-        base_reward = max(0.00, (10 - dist**2)*0.08)
+        base_reward = max(0.00, (20 - dist**2)*0.08)
         #print(f"Base reward: {base_reward}")
         #print(f"Distance: {dist}")
         # Penalización por velocidad (para evitar tambaleo)
-        speed_penalty = -0.2 * np.linalg.norm(vel)
+        speed_penalty = -1 * np.linalg.norm(vel)
 
         # Penalización por inclinación (roll y pitch, no yaw)
-        angle_penalty = -.2 * (abs(angles[0]) + abs(angles[1]))
+        angle_penalty = -1 * (abs(angles[0]) + abs(angles[1]))
 
         # penalizar por tiempo acumulativo sin actualizar objetivo
-        self.time_penalty = self.time_penalty -50 / (self.PYB_FREQ * self.EPISODE_LEN_SEC)  # Penalización que aumenta con el tiempo
+        self.time_penalty = self.time_penalty -10 / (self.PYB_FREQ * self.EPISODE_LEN_SEC)  # Penalización que aumenta con el tiempo
         #print(f"Time penalty: {self.time_penalty :.8f}")
         
         # Recompensa extra si está muy cerca y estable
         bonus = 0.0
         if self.random_targets:
-            if dist < 0.3 and np.linalg.norm(vel) < 0.2 and abs(angles[0]) < 0.2 and abs(angles[1]) < 0.2:
+            if dist < 0.2 and np.linalg.norm(vel) < 0.2 and abs(angles[0]) < 0.2 and abs(angles[1]) < 0.2:
                 old_target = self.TARGET_POS.copy()
-                bonus = 150 * self.score
+                bonus = 190 * self.score
                 self.time_penalty = 0
                 self.score += 1
                 if self.score == 6:
@@ -238,7 +238,7 @@ class HoverAviary(BaseRLAviary):
                     print("¡Puntuación 15 alcanzada!" + " objetivo alcanzado: " + str(old_target))
                 r = 0.6  # radio del cubo de colisión
                 
-                self.TARGET_POS = np.array([old_target[0]+ (np.random.uniform(.5, 3)), old_target[1]+np.random.uniform(.5, 3), np.random.uniform(0.5, 1.2)])
+                self.TARGET_POS = np.array([old_target[0]+ (np.random.uniform(-6, 6)), old_target[1]+np.random.uniform(-6, 6), np.random.uniform(0.5, 1.2)])
                 for i in range(100):  # Intenta encontrar un punto aleatorio sin colisiones    
                     if self._is_space_clear(self.TARGET_POS, radius=r):
                         self._draw_target_marker([0, 0, 1])
@@ -247,7 +247,7 @@ class HoverAviary(BaseRLAviary):
                         
                     else:
                         #self._draw_target_marker([1, 0, 0])
-                        self.TARGET_POS = np.array([old_target[0]+np.random.uniform(.5, 3), old_target[1]+np.random.uniform(.5, 3), np.random.uniform(0.5, 1.2)])
+                        self.TARGET_POS = np.array([old_target[0]+np.random.uniform(-6, 6), old_target[1]+np.random.uniform(-6, 6), np.random.uniform(0.5, 1.2)])
                         if i>=99:
                             print("No se encontró un nuevo objetivo sin colisiones después de 100 intentos. Manteniendo el mismo objetivo.")
                             bonus = 1000  # No dar la recompensa si no se puede colocar un nuevo objetivo
@@ -272,7 +272,7 @@ class HoverAviary(BaseRLAviary):
         #print("Total reward: " + str(total_reward) )
         self.actual_reward = self.actual_reward + total_reward
         #print(f"Reward breakdown: base {base_reward:.3f}, time_penalty {self.time_penalty:.3f}, reward_dist {reward_dist:.3f}, speed_penalty {speed_penalty:.3f}, angle_penalty {angle_penalty:.3f}, bonus {bonus:.3f}, penaltyLidar {penaltyLidar:.3f} - total: {total_reward:.3f}")
-        if self.score == 4:
+        if self.score == 10:
             print("¡Puntuación máxima alcanzada! Reiniciando entorno.")
             self.truncate_early = True
             bonus = bonus + 1000  # Dar una gran recompensa por alcanzar la puntuación máxima
@@ -291,16 +291,16 @@ class HoverAviary(BaseRLAviary):
             Whether the current episode is done.
 
         """
-        penalty = 2000 / self.score # Penalización que disminuye a medida que se alcanzan más objetivos
+        penalty = 4500 / self.score # Penalización que disminuye a medida que se alcanzan más objetivos
         state = self._getDroneStateVector(0)
-        if (abs(state[0]) > 10 or abs(state[1]) > 10 or state[2] > 2.5 # Truncate when the drone is too far away
+        if (abs(state[0]) > 50 or abs(state[1]) > 50 or state[2] > 2.5 # Truncate when the drone is too far away
         ):
             #print(  f"Truncated far away: pos {state[0:3]}, angles {state[7:10]}")
             print("far away - reward: "  + str(self.actual_reward - penalty))
             self.actual_reward = 0
             return True, penalty
         
-        if (abs(state[7]) > .7 or abs(state[8]) > .7 # Truncate when the drone is too tilted
+        if (abs(state[7]) > .6 or abs(state[8]) > .6 # Truncate when the drone is too tilted
         ):
             #print(  f"Truncated tilted: pos {state[0:3]}, angles {state[7:10]}")
             print(" tilted - reward: "  + str(self.actual_reward - penalty))

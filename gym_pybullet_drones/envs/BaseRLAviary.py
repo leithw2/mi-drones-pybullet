@@ -108,7 +108,7 @@ class BaseRLAviary(BaseAviary):
 
         """
         randoms_obstacles= True
-        if True:
+        if False:
             if randoms_obstacles:
                 # p.loadURDF("block.urdf",
                 #         [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
@@ -123,24 +123,24 @@ class BaseRLAviary(BaseAviary):
                 self.cubo_id = p.createMultiBody(baseMass=1, # 0 lo hace estático e inamovible
                                 baseCollisionShapeIndex=col_id,
                                 baseVisualShapeIndex=vis_id,
-                                basePosition=[np.random.uniform(1, 2),np.random.uniform(1, 2), 0.5],
+                                basePosition=[np.random.uniform(3, 6),np.random.uniform(3, 6), 0.5],
                                 physicsClientId=self.CLIENT)
                 
-                p.loadURDF("cube_small.urdf",
-                    [np.random.uniform(2.5, 3),np.random.uniform(2.5, 3), 0.5],
-                    p.getQuaternionFromEuler([0, 0, 0]),
-                    physicsClientId=self.CLIENT, globalScaling=20
-                    )
-                p.loadURDF("cube_small.urdf",
-                    [np.random.uniform(3.5, 4),np.random.uniform(3.5, 4), 0.5],
-                    p.getQuaternionFromEuler([0, 0, 0]),
-                    physicsClientId=self.CLIENT, globalScaling=20
-                    )
-                p.loadURDF("cube_small.urdf",
-                    [np.random.uniform(4.5, 5.5),np.random.uniform(4.5, 5.5), 0.5],
-                    p.getQuaternionFromEuler([0, 0, 0]),
-                    physicsClientId=self.CLIENT, globalScaling=20
-                    )
+                # p.loadURDF("cube_small.urdf",
+                #     [np.random.uniform(2.5, 3),np.random.uniform(2.5, 3), 0.5],
+                #     p.getQuaternionFromEuler([0, 0, 0]),
+                #     physicsClientId=self.CLIENT, globalScaling=20
+                #     )
+                # p.loadURDF("cube_small.urdf",
+                #     [np.random.uniform(3.5, 4),np.random.uniform(3.5, 4), 0.5],
+                #     p.getQuaternionFromEuler([0, 0, 0]),
+                #     physicsClientId=self.CLIENT, globalScaling=20
+                #     )
+                # p.loadURDF("cube_small.urdf",
+                #     [np.random.uniform(4.5, 5.5),np.random.uniform(4.5, 5.5), 0.5],
+                #     p.getQuaternionFromEuler([0, 0, 0]),
+                #     physicsClientId=self.CLIENT, globalScaling=20
+                #     )
                 # p.loadURDF("duck_vhacd.urdf",
                 #         [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
                 #         p.getQuaternionFromEuler([1, 0, 0]),

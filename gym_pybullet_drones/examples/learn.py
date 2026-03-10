@@ -185,7 +185,7 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.07.2026_09.47.52')
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.09.2026_15.20.02')
 #CONTINUE_FROM = None # None or path to saved model folder
 RANDOM_TARGETS=True
 
@@ -250,10 +250,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                 train_env,
                 device=DEVICE,
                 tensorboard_log=filename+'/tb/',
-                n_steps=int(512),          # Aumentado para mejor uso de GPU
-                batch_size=int(256),
-                n_epochs=int(10),        # Menos épocas por update, más datos por epoch
-                gae_lambda=0.95,
+                n_steps=int(512*8),     # Aumentado para más muestras por actualización, mejor estimación de la ventaja, pero más memoria y menos actualizaciones por paso
+                batch_size=int(256*8),    # Reducido para permitir más actualizaciones por paso, pero puede aumentar la varianza del gradiente
+                n_epochs=int(10*8),       # Aumentado para más actualizaciones por paso
+                gae_lambda=0.95, # Valor por defecto, buen compromiso entre bias y varianza
                     learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
                     #learning_rate=0.0001,
                     policy_kwargs=dict(
