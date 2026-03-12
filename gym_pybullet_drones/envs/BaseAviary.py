@@ -568,11 +568,12 @@ class BaseAviary(gym.Env):
         result = p.rayTestBatch(ray_from_list, ray_to_list, physicsClientId=self.CLIENT)
 
         # 4. Extraer distancias
-        dist_al_suelo = result[0][2] * 2 if result[0][0] != -1 else 1
-        dist_left     = result[1][2] * 2 if result[1][0] != -1 else 1
-        dist_right    = result[2][2] * 2 if result[2][0] != -1 else 1
-        dist_back     = result[3][2] * 2 if result[3][0] != -1 else 1
-        dist_front    = result[4][2] * 2 if result[4][0] != -1 else 1
+        dist_al_suelo = result[0][2] * 1 if result[0][0] != -1 else 1
+        dist_left     = result[1][2] * 1 if result[1][0] != -1 else 1
+        dist_right    = result[2][2] * 1 if result[2][0] != -1 else 1
+        dist_back     = result[3][2] * 1 if result[3][0] != -1 else 1
+        dist_front    = result[4][2] * 1 if result[4][0] != -1 else 1
+
 
         # Visualización
         if self.GUI:

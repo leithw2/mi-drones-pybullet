@@ -214,11 +214,11 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     else:
         if not multiagent:
             train_env = make_vec_env(HoverAviary,
-                                    env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics),
+                                    env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60),
                                     n_envs=N_ENVS,
                                     seed=0,
                                     )
-            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
+            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics,ctrl_freq =60 )
             eval_env = Monitor(eval_env)
         else:
             train_env = make_vec_env(MultiHoverAviary,

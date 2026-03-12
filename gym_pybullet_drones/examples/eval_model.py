@@ -25,7 +25,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                                record=record_video,
                                initial_xyzs=np.array([[0,0,1]]),
                                initial_rpys=np.array([[0,0,0]]),
-                               random_targets=True, physics=Physics.PYB)
+                               random_targets=True, physics=Physics.PYB, pyb_freq = 240, ctrl_freq = 60)
     else:
         test_env = MultiHoverAviary(gui=gui,
                                     num_drones=DEFAULT_AGENTS,

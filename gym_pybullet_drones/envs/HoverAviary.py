@@ -100,6 +100,7 @@ class HoverAviary(BaseRLAviary):
 
     def reset(self, *args, **kwargs):
         obs = super().reset(*args, **kwargs)
+        #print("control freq: " + str(self.CTRL_FREQ), "pyb freq: " + str(self.PYB_FREQ), "episode len sec: " + str(self.EPISODE_LEN_SEC))
         self.score = 1
         self.time_penalty = 0
         #self.TARGET_POS = np.array([0,2,1])
@@ -111,7 +112,7 @@ class HoverAviary(BaseRLAviary):
                                       basePosition=[0, 0, -10], # Escondido bajo el suelo
                                       physicsClientId=self.CLIENT)
         if self.random_targets:
-            self.TARGET_POS = np.array([np.random.uniform(-6, 6),np.random.uniform(-6, 6),np.random.uniform(0.5, 1.2)])
+            self.TARGET_POS = np.array([np.random.uniform(-6, 1),np.random.uniform(-6, 1),np.random.uniform(0.5, 1.2)])
             r = 0.4  # radio del cubo de colisión
             for i in range(500):  # Intenta encontrar un punto aleatorio sin colisiones
                     if self._is_space_clear(self.TARGET_POS, radius=r):
@@ -122,7 +123,7 @@ class HoverAviary(BaseRLAviary):
                     else:
                         #print(f"colisiones: {self.TARGET_POS}")
                         #self._draw_target_marker([1, 0, 0])
-                        self.TARGET_POS = np.array([np.random.uniform(-6, 6),np.random.uniform(-6, 6),np.random.uniform(0.5, 1.2)])      
+                        self.TARGET_POS = np.array([np.random.uniform(-6, 1),np.random.uniform(-6, 1),np.random.uniform(0.5, 1.2)])      
 
         
         #print("Nuevo objetivo: " + str(self.TARGET_POS))
@@ -137,8 +138,8 @@ class HoverAviary(BaseRLAviary):
     
     def _is_space_clear(self, pos, radius=0.6, ignore_ids=[]):
         # 1. Límites del área de vuelo
-        if pos[0] < -1 or pos[1] < -1:
-            return False
+        # if pos[0] < -1 or pos[1] < -1:
+        #     return False
         
         # --- NUEVO: Chequeo de Volumen (Detecta si está ADENTRO de un sólido) ---
         # Creamos una caja pequeña alrededor del punto
@@ -207,7 +208,7 @@ class HoverAviary(BaseRLAviary):
             #print(f"Distance increased from {self._best_dist:.3f} to {dist:.3f} - reward: {reward_dist}")
 
 
-        base_reward = max(0.00, (20 - dist**2)*0.08)
+        base_reward = max(0.00, (30 - dist**2)*0.08)
         #print(f"Base reward: {base_reward}")
         #print(f"Distance: {dist}")
         # Penalización por velocidad (para evitar tambaleo)
@@ -238,7 +239,7 @@ class HoverAviary(BaseRLAviary):
                     print("¡Puntuación 15 alcanzada!" + " objetivo alcanzado: " + str(old_target))
                 r = 0.6  # radio del cubo de colisión
                 
-                self.TARGET_POS = np.array([old_target[0]+ (np.random.uniform(-6, 6)), old_target[1]+np.random.uniform(-6, 6), np.random.uniform(0.5, 1.2)])
+                self.TARGET_POS = np.array([ (np.random.uniform(-4, 4)),np.random.uniform(-4, 4), np.random.uniform(0.5, 1.2)])
                 for i in range(100):  # Intenta encontrar un punto aleatorio sin colisiones    
                     if self._is_space_clear(self.TARGET_POS, radius=r):
                         self._draw_target_marker([0, 0, 1])
@@ -247,11 +248,12 @@ class HoverAviary(BaseRLAviary):
                         
                     else:
                         #self._draw_target_marker([1, 0, 0])
-                        self.TARGET_POS = np.array([old_target[0]+np.random.uniform(-6, 6), old_target[1]+np.random.uniform(-6, 6), np.random.uniform(0.5, 1.2)])
+                        self.TARGET_POS = np.array([ (np.random.uniform(-4, 4)), np.random.uniform(-4, 4), np.random.uniform(0.5, 1.2)])
                         if i>=99:
                             print("No se encontró un nuevo objetivo sin colisiones después de 100 intentos. Manteniendo el mismo objetivo.")
                             bonus = 1000  # No dar la recompensa si no se puede colocar un nuevo objetivo
-                            self.truncate_early = True       
+                            self.truncate_early = True
+                            
 
         else:
             #print(f"New target position: {self.TARGET_POS}")
@@ -291,6 +293,7 @@ class HoverAviary(BaseRLAviary):
             Whether the current episode is done.
 
         """
+        
         penalty = 4500 / self.score # Penalización que disminuye a medida que se alcanzan más objetivos
         state = self._getDroneStateVector(0)
         if (abs(state[0]) > 50 or abs(state[1]) > 50 or state[2] > 2.5 # Truncate when the drone is too far away
@@ -313,11 +316,11 @@ class HoverAviary(BaseRLAviary):
             self.actual_reward = 0
             return True, penalty
         
-        if self.lidar is not None and np.min(self.lidar) < 0.15: # Truncate if the drone is about to collide with something
+        if self.lidar is not None and np.min(self.lidar) < 0.1: # Truncate if the drone is about to collide with something
             # print(f"Truncated: obstacle detected at distance {self.lidar}")
-            print("collision - reward: "  + str(self.actual_reward - penalty))
-            self.actual_reward = 0
-            return True, penalty
+            print("collision special!!!! - reward: "  + str(self.actual_reward - penalty))
+            self.actual_reward = self.actual_reward - 5000
+            return True, penalty + 5000
         
         #print("target pos: " + str(self.TARGET_POS) + " drone pos: " + str(state[0:3]) + " distance to target: " + str(np.linalg.norm(self.TARGET_POS-state[0:3])))
         if np.linalg.norm(self.TARGET_POS-state[0:3]) < .001:

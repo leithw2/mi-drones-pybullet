@@ -73,6 +73,10 @@ class BaseRLAviary(BaseAviary):
         vision_attributes = True if obs == ObservationType.RGB else False
         self.OBS_TYPE = obs
         self.ACT_TYPE = act
+        
+        self.posBo = [None for i in range(4)] # placeholder for obstacle positions in case we want to remove them later
+        self.cubo_id = [None for i in range(4)] # placeholder for obstacle ids in case we want to remove them later
+        
         #### Create integrated controllers #########################
         if act in [ActionType.PID, ActionType.VEL, ActionType.ONE_D_PID]:
             os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -108,7 +112,7 @@ class BaseRLAviary(BaseAviary):
 
         """
         randoms_obstacles= True
-        if False:
+        if True:
             if randoms_obstacles:
                 # p.loadURDF("block.urdf",
                 #         [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
@@ -117,14 +121,25 @@ class BaseRLAviary(BaseAviary):
                 #       )
                 
                 # Definir la colisión (1 metro de lado = halfExtents de 0.5)
-                col_id = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.5])
-                vis_id = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.5, 0.5, 0.5], rgbaColor=[0.8, 0.2, 0.2, 1])
-
-                self.cubo_id = p.createMultiBody(baseMass=1, # 0 lo hace estático e inamovible
+                self.posBo[0] = [-2,-2,.8]
+                self.posBo[1]  = [2,-2,.8]
+                self.posBo[2]  = [-2,2,.8]
+                self.posBo[3]  = [2,2,.8]
+                
+                
+                
+                
+                # create multiple random boxes in the environment
+                col_id = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.8, 0.8, 0.8])
+                vis_id = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.8, 0.8, 0.8], rgbaColor=[0.8, 0.2, 0.2, 1])
+                for i in range(len(self.posBo)):
+                    self.cubo_id[i] = p.createMultiBody(baseMass=1, # 0 lo hace estático e inamovible
                                 baseCollisionShapeIndex=col_id,
                                 baseVisualShapeIndex=vis_id,
-                                basePosition=[np.random.uniform(3, 6),np.random.uniform(3, 6), 0.5],
+                                #basePosition=[np.random.uniform(1, 3.5) * np.random.choice([-1, 1]), np.random.uniform(1, 3.5) * np.random.choice([-1, 1]), 0.8],
+                                basePosition=self.posBo[i],
                                 physicsClientId=self.CLIENT)
+                
                 
                 # p.loadURDF("cube_small.urdf",
                 #     [np.random.uniform(2.5, 3),np.random.uniform(2.5, 3), 0.5],
