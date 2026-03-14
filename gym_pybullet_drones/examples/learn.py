@@ -240,8 +240,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'final_model.zip')}")
         model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device=DEVICE)
         # 2. Modificar parámetros (Fine-tuning)
-        # model.learning_rate = 0.0001  # Bajamos la tasa para mayor estabilidad
-        # model.ent_coef = 0.001       # Reducimos la exploración aleatoria
+        # Ejemplo de decaimiento lineal: empieza en 0.07 y baja a 0.005
+        model.learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005
+        model.ent_coef = 0.01       # Reducimos la exploración aleatoria
         # model.clip_range = constant_fn(0.2)
         # El modelo ya contiene num_timesteps internamente
         model.tensorboard_log = filename+'/tb/'
