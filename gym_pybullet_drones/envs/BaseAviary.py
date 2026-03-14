@@ -585,7 +585,7 @@ class BaseAviary(gym.Env):
                     replaceItemUniqueId=self.lidar_ids[i]
                 )
         # print(f"Distancias LIDAR - Suelo: {dist_al_suelo:.2f}, Izquierda: {dist_left:.2f}, Derecha: {dist_right:.2f}, Atrás: {dist_back:.2f}, Frente: {dist_front:.2f}")
-        return dist_al_suelo, dist_left, dist_right, dist_back, dist_front
+        return np.array([dist_al_suelo, dist_left, dist_right, dist_back, dist_front])
         
     
     def _updateAndStoreKinematicInformation(self):

@@ -66,7 +66,9 @@ class BaseRLAviary(BaseAviary):
         """
         #### Create a buffer ########
         self.ACTION_BUFFER_SIZE = int(1) # buffer of the last n actions, to be added to the observation space for non-Markovian formulations of the problem
+        self.LIDAR_BUFFER_SIZE = int(2) # buffer of the last n lidar readings, to be added to the observation space for non-Markovian formulations of the problem and to help with obstacle avoidance in vision-based tasks
         self.action_buffer = deque(maxlen=self.ACTION_BUFFER_SIZE)
+        self.lidar_buffer = deque(maxlen=self.LIDAR_BUFFER_SIZE)
         ####
         # Initialize TARGET_POS to avoid attribute errors
         self.TARGET_POS = np.zeros(3) if num_drones == 1 else np.zeros((num_drones, 3))
@@ -112,7 +114,7 @@ class BaseRLAviary(BaseAviary):
 
         """
         randoms_obstacles= True
-        if True:
+        if False:
             if randoms_obstacles:
                 # p.loadURDF("block.urdf",
                 #         [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
@@ -322,24 +324,36 @@ class BaseRLAviary(BaseAviary):
             # OBS SPACE OF SIZE
             lo = -np.inf
             hi = np.inf
-            obs_lower_bound = np.array([[lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo,lo,lo] for i in range(self.NUM_DRONES)])
-            obs_upper_bound = np.array([[hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi,hi,hi] for i in range(self.NUM_DRONES)])
+            obs_lower_bound = np.array([[lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo] for i in range(self.NUM_DRONES)])
+            obs_upper_bound = np.array([[hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi] for i in range(self.NUM_DRONES)])
             #obs_lower_bound = np.array([[lo,lo,lo, lo,lo,lo, lo,lo,lo, lo,lo,lo] for i in range(self.NUM_DRONES)])
             #obs_upper_bound = np.array([[hi,hi,hi, hi,hi,hi, hi,hi,hi, hi,hi,hi] for i in range(self.NUM_DRONES)])
             # Add action buffer to observation space
             act_lo = -1
-            act_hi = +1 
+            act_hi = +1
+            lidar_lo = 0
+            lidar_hi = 1
+            
+            for i in range(self.LIDAR_BUFFER_SIZE):
+                self.lidar_buffer.append(np.zeros((self.NUM_DRONES, 5)))
+                
+             
             for i in range(self.ACTION_BUFFER_SIZE):
                 if self.ACT_TYPE in [ActionType.RPM, ActionType.VEL]:
-                    obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo,act_lo,act_lo,act_lo] for i in range(self.NUM_DRONES)])])
-                    obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi,act_hi,act_hi,act_hi] for i in range(self.NUM_DRONES)])])
+                    obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo,act_lo,act_lo,act_lo, lidar_lo, lidar_lo, lidar_lo, lidar_lo, lidar_lo] for i in range(self.NUM_DRONES)])])
+                    obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi,act_hi,act_hi,act_hi, lidar_hi, lidar_hi, lidar_hi, lidar_hi, lidar_hi] for i in range(self.NUM_DRONES)])])
                 elif self.ACT_TYPE==ActionType.PID:
                     obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo,act_lo,act_lo] for i in range(self.NUM_DRONES)])])
                     obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi,act_hi,act_hi] for i in range(self.NUM_DRONES)])])
                 elif self.ACT_TYPE in [ActionType.ONE_D_RPM, ActionType.ONE_D_PID]:
                     obs_lower_bound = np.hstack([obs_lower_bound, np.array([[act_lo] for i in range(self.NUM_DRONES)])])
                     obs_upper_bound = np.hstack([obs_upper_bound, np.array([[act_hi] for i in range(self.NUM_DRONES)])])
-            return spaces.Box(low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32)
+                    
+            # Agregamos espacio para el historial del LIDAR (5 observaciones por cada paso en el buffer)
+            for i in range(self.LIDAR_BUFFER_SIZE):
+                obs_lower_bound = np.hstack([obs_lower_bound, np.full((self.NUM_DRONES, 5), lidar_lo)])
+                obs_upper_bound = np.hstack([obs_upper_bound, np.full((self.NUM_DRONES, 5), lidar_hi)])
+                return spaces.Box(low=obs_lower_bound, high=obs_upper_bound, dtype=np.float32)
             ############################################################
         else:
             print("[ERROR] in BaseRLAviary._observationSpace()")
@@ -371,9 +385,8 @@ class BaseRLAviary(BaseAviary):
             return np.array([self.rgb[i] for i in range(self.NUM_DRONES)]).astype('float32')
         elif self.OBS_TYPE == ObservationType.KIN:
             # OBS SPACE OF SIZE 15: 12 originales + 3 para TARGET_POS
-            obs_12 = np.zeros((self.NUM_DRONES,17))
-            lidar = self.lidar if hasattr(self, 'lidar') else np.zeros(5) # placeholder in case _update_lidar() hasn't been called yet
-
+            obs_12 = np.zeros((self.NUM_DRONES,12))
+            #lidar = self.lidar if hasattr(self, 'lidar') else np.zeros(5) # placeholder for lidar readings in case the environment doesn't have a lidar sensor, to avoid attribute errors and allow the use of the same observation space for all environments regardless of the presence of a lidar sensor. The shape of the lidar reading is (NUM_DRONES, 5) because we have 5 rays in our simple lidar sensor, but it can be changed as needed.
             for i in range(self.NUM_DRONES):
                 obs = self._getDroneStateVector(i)
                 # Concatenar TARGET_POS a la observación
@@ -385,11 +398,18 @@ class BaseRLAviary(BaseAviary):
                         target = self.TARGET_POS[i] - obs[0:3]
                 else:
                     target = np.zeros(3)
-                obs_12[i, :] = np.hstack([target, obs[7:10], obs[10:13], obs[13:16], lidar]).reshape(17,)
+                lidar = self.lidar
+                obs_12[i, :] = np.hstack([target, obs[7:10], obs[10:13], obs[13:16]]).reshape(12,)
+                l = np.tile(lidar, (self.NUM_DRONES, 1))
+                self.lidar_buffer.append(l)
             ret = np.array([obs_12[i, :] for i in range(self.NUM_DRONES)]).astype('float32')
-            # Add action buffer to observation
+            # Add action buffer and lidar buffer to observation space
             for i in range(self.ACTION_BUFFER_SIZE):
                 ret = np.hstack([ret, np.array([self.action_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
+            for i in range(self.LIDAR_BUFFER_SIZE):
+                ret = np.hstack([ret, np.array([self.lidar_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
+                
+            #print(ret)
             return ret
             ############################################################
         else:

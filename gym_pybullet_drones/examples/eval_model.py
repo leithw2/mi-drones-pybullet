@@ -84,7 +84,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results', 'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.09.2026_15.20.02', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
+    parser.add_argument('--model_path', type=str, default= os.path.join('results', 'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.12.2026_15.38.29', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
     parser.add_argument('--record_video', default=True, type=bool, help='Grabar video (default: False)')

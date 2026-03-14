@@ -185,7 +185,7 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.09.2026_15.20.02')
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.12.2026_15.38.29')
 #CONTINUE_FROM = None # None or path to saved model folder
 RANDOM_TARGETS=True
 
