@@ -185,9 +185,9 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs21_bufferAction1_24x12_64x64_lidar_nowind_map_save-03.12.2026_15.38.29')
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs21_bufferAction1_24x12_64x64_antesdefiguras_lidar_objects_save-03.12.2026_15.38.29')
 #CONTINUE_FROM = None # None or path to saved model folder
-RANDOM_TARGETS=True
+RANDOM_TARGETS=False
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, continue_from=None):
     # Si se especifica un modelo para continuar, usar ese path, si no, crear uno nuevo
@@ -241,8 +241,8 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device=DEVICE)
         # 2. Modificar parámetros (Fine-tuning)
         # Ejemplo de decaimiento lineal: empieza en 0.07 y baja a 0.005
-        model.learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005
-        model.ent_coef = 0.01       # Reducimos la exploración aleatoria
+        # model.learning_rate = 0.0004
+        model.ent_coef = 0.01 
         # model.clip_range = constant_fn(0.2)
         # El modelo ya contiene num_timesteps internamente
         model.tensorboard_log = filename+'/tb/'
@@ -255,7 +255,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                 batch_size=int(256*8),    # Reducido para permitir más actualizaciones por paso, pero puede aumentar la varianza del gradiente
                 n_epochs=int(10*8),       # Aumentado para más actualizaciones por paso
                 gae_lambda=0.95, # Valor por defecto, buen compromiso entre bias y varianza
-                    learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
+                learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
                     #learning_rate=0.0001,
                     policy_kwargs=dict(
                         net_arch=[dict(pi=[24,12], vf=[64, 64])],
