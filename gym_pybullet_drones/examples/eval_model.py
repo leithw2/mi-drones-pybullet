@@ -23,7 +23,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video,
-                               initial_xyzs=np.array([[0,0,1]]),
+                               initial_xyzs=np.array([[0,0,3]]),
                                initial_rpys=np.array([[0,0,0]]),
                                random_targets=False, physics=Physics.PYB, pyb_freq = 240, ctrl_freq = 60)
     else:
@@ -84,7 +84,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results', 'obs21_bufferAction1_24x12_64x64_antesdefiguras_lidar_objects_save-03.12.2026_15.38.29', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
+    parser.add_argument('--model_path', type=str, default= os.path.join('results', 'obs21_bufferAction1_24x12_64x64_lidarinverso_nowind_map_save-03.19.2026_14.24.20', 'best_model'), help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
     parser.add_argument('--record_video', default=True, type=bool, help='Grabar video (default: False)')
@@ -92,6 +92,6 @@ if __name__ == '__main__':
     parser.add_argument('--colab', default=False, type=bool, help='Modo Colab')
     parser.add_argument('--episodes', default=90, type=int, help='Cantidad de episodios a evaluar')
     parser.add_argument('--max_steps', default=None, type=int, help='Máximo de pasos por episodio')
-    parser.add_argument('--speed_factor', default=.2, type=float, help='Multiplicador de velocidad de la visualización (1.0=normal, <1.0=rápido, >1.0=lento)')
+    parser.add_argument('--speed_factor', default=1, type=float, help='Multiplicador de velocidad de la visualización (1.0=normal, <1.0=rápido, >1.0=lento)')
     args = parser.parse_args()
     evaluate_model(**vars(args))

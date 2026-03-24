@@ -574,6 +574,12 @@ class BaseAviary(gym.Env):
         dist_back     = result[3][2] * 1 if result[3][0] != -1 else 1
         dist_front    = result[4][2] * 1 if result[4][0] != -1 else 1
 
+        dist_al_suelo = 1 - dist_al_suelo
+        dist_left     = 1 - dist_left
+        dist_right    = 1 - dist_right
+        dist_back     = 1 - dist_back
+        dist_front    = 1 - dist_front
+
 
         # Visualización
         if self.GUI:
@@ -820,7 +826,7 @@ class BaseAviary(gym.Env):
             # Ráfagas intermitentes de viento
             self.step_count += 1
             if self.step_count % 400 == 0:  # Cada 200 steps, una ráfaga
-                gust_strength = np.random.uniform(0.005, 0.03)  # Fuerza de la ráfaga
+                gust_strength = np.random.uniform(0.002, 0.01)  # Fuerza de la ráfaga
                 gust_direction = np.random.uniform(-1, 1, 3)
                 gust_direction = gust_direction / np.linalg.norm(gust_direction)
                 self.wind_force = gust_strength * gust_direction
@@ -849,7 +855,7 @@ class BaseAviary(gym.Env):
             wind_direction_global, _ = p.multiplyTransforms([0, 0, 0], quat, wind_force, [0, 0, 0, 1])
             
             # Escalamos la flecha para que sea visible (ejemplo: multiplicar por 0.5 o 2 según la magnitud)
-            scale = 20 
+            scale = 200 
             arrow_end = [
                 pos[0] + wind_direction_global[0] * -scale,
                 pos[1] + wind_direction_global[1] * -scale,
