@@ -1,40 +1,6 @@
 from stable_baselines3.common.callbacks import BaseCallback
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, ObservationType
 
-
-# Callback para renderizar el entorno de entrenamiento en cada paso, con soporte para cámara lenta
-class TrainRenderCallback(BaseCallback):
-    def __init__(self, env, sync_human_speed=False, slow_factor=1, verbose=1):
-        """
-        slow_factor > 1.0 hará la simulación más lenta (cámara lenta).
-        slow_factor = 1.0 es velocidad real.
-        slow_factor < 1.0 es más rápido.
-        """
-        super().__init__(verbose)
-        self.env = env
-        self.sync_human_speed = sync_human_speed
-        self.slow_factor = slow_factor
-        self._start_time = None
-
-    def _on_training_start(self) -> None:
-        if self.sync_human_speed or self.slow_factor != 1.0:
-            self._start_time = time.time()
-
-    def _on_step(self) -> bool:
-        if hasattr(self.env, 'render'):
-            try:
-                self.env.render()
-            except Exception as e:
-                print(f"[WARN] Render error during training: {e}")
-        # Sincronizar a velocidad humana o cámara lenta si está activado
-        if (self.sync_human_speed or self.slow_factor != 1.0) and hasattr(self.env, 'CTRL_TIMESTEP') and self._start_time is not None:
-            i = self.num_timesteps
-            elapsed = time.time() - self._start_time
-            expected = i * self.env.CTRL_TIMESTEP * self.slow_factor
-            to_wait = expected - elapsed
-            if to_wait > 0:
-                time.sleep(to_wait)
-        return True
 """Script demonstrating the use of `gym_pybullet_drones`'s Gymnasium interface.
 
 Classes HoverAviary and MultiHoverAviary are used as learning envs for the PPO algorithm.
@@ -91,92 +57,8 @@ except Exception:
     pass
 #N_ENVS = min(16, max(1, (os.cpu_count() or 1)))
 N_ENVS = 12 # For debugging, set to 1 to avoid multiprocessing issues
-# Callback para loggear en TensorBoard: gráfico del modelo, histogramas de parámetros y LR
-class TensorboardCallback(BaseCallback):
-    def __init__(self, tb_log_dir, log_freq=2000, verbose=0):
-        super().__init__(verbose)
-        self.tb_log_dir = tb_log_dir
-        self.log_freq = log_freq
-        self.writer = None
-
-    def _on_training_start(self) -> None:
-        try:
-            self.writer = SummaryWriter(self.tb_log_dir)
-            # Intentar agregar el grafo del modelo (puede fallar con algunas políticas)
-            obs_space = None
-            try:
-                obs_space = self.training_env.observation_space.shape
-            except Exception:
-                # VecEnv/Wrapper pueden requerir acceder al env interno
-                try:
-                    obs_space = self.training_env.envs[0].observation_space.shape
-                except Exception:
-                    obs_space = None
-            if obs_space is not None:
-                # Obtener shape de observación y tensor dummy
-                obs_shape = obs_space
-                dummy = torch.zeros(1, *obs_shape)
-                dummy_flat = dummy.view(1, -1)   # Flatten si el extractor es FlattenExtractor
-
-                try:
-                    # Trazar solo las sub-redes deterministas bajo torch.no_grad()
-                    with torch.no_grad():
-                        policy_net = self.model.policy.mlp_extractor.policy_net
-                        action_net = self.model.policy.action_net
-                        policy_net.eval()
-                        action_net.eval()
-                        # pasar dummy_flat.detach() para evitar grad en non-leaf tensors
-                        try:
-                            self.writer.add_graph(policy_net, (dummy_flat.detach(),))
-                        except Exception as e:
-                            print(f"[WARN] add_graph(policy_net) failed: {e}")
-                        try:
-                            latent = policy_net(dummy_flat.detach())
-                            self.writer.add_graph(action_net, (latent.detach(),))
-                        except Exception as e:
-                            print(f"[WARN] add_graph(action_net) failed: {e}")
-                except Exception as e:
-                    print(f"[WARN] add_graph partial failed: {e}")
-            # Always add textual architecture as fallback
-            try:
-                self.writer.add_text('model/architecture', str(self.model.policy))
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"[WARN] Falló inicializar SummaryWriter: {e}")
-
-    def _on_step(self) -> bool:
-        # Loggear histogramas de parámetros periódicamente
-        try:
-            if self.writer is None:
-                return True
-            if self.num_timesteps % self.log_freq == 0:
-                for name, param in self.model.policy.named_parameters():
-                    try:
-                        self.writer.add_histogram(name, param.detach().cpu().numpy(), self.num_timesteps)
-                    except Exception:
-                        pass
-                # Intentar loggear learning rate si existe
-                try:
-                    lr = None
-                    if hasattr(self.model, 'lr_schedule') and callable(self.model.lr_schedule):
-                        lr = float(self.model.lr_schedule(self.num_timesteps))
-                    if lr is not None:
-                        self.writer.add_scalar('train/learning_rate', lr, self.num_timesteps)
-                except Exception:
-                    pass
-        except Exception as e:
-            print(f"[WARN] TensorboardCallback error on step: {e}")
-        return True
-
-    def _on_training_end(self) -> None:
-        if self.writer is not None:
-            try:
-                self.writer.close()
-            except Exception:
-                pass
 DEFAULT_GUI = False
-DEFAULT_RECORD_VIDEO = True
+DEFAULT_RECORD_VIDEO = False
 DEFAULT_OUTPUT_FOLDER = 'results'
 DEFAULT_COLAB = False
 
@@ -185,9 +67,37 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'obs21_bufferAction1_24x12_64x64_lidarinverso_nowind_map_save-03.19.2026_14.24.20')
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'debug-04.01.2026_13.50.07')
 #CONTINUE_FROM = None # None or path to saved model folder
 RANDOM_TARGETS=False
+
+
+class SlowCallback(BaseCallback):
+    def __init__(self, ctrl_freq, speed_multiplier=1.0, verbose=0):
+        super(SlowCallback, self).__init__(verbose)
+        self.step_time = 1.0 / ctrl_freq
+        self.speed_multiplier = speed_multiplier
+        self.last_step_real_time = 0
+
+    def _on_step(self) -> bool:
+        if self.last_step_real_time == 0:
+            self.last_step_real_time = time.time()
+            return True
+
+        # Tiempo que debería durar un paso en el mundo real
+        target_dt = self.step_time / self.speed_multiplier
+        
+        # Tiempo real que ha pasado desde el último paso
+        current_real_time = time.time()
+        elapsed = current_real_time - self.last_step_real_time
+        
+        # Si el CPU fue más rápido que el tiempo objetivo, esperamos la diferencia
+        delay = target_dt - elapsed
+        if delay > 0:
+            time.sleep(delay)
+        
+        self.last_step_real_time = time.time()
+        return True
 
 def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, continue_from=None):
     # Si se especifica un modelo para continuar, usar ese path, si no, crear uno nuevo
@@ -196,18 +106,18 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'obs21_bufferAction1_24x12_64x64_lidarinverso_nowind_map_save-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'debug-'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
     # Alternar entre entrenamiento con render (GUI) y entrenamiento rápido (vectorizado)
     if gui:
         if not multiagent:
-            train_env = HoverAviary(gui=True, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
+            train_env = HoverAviary(gui=gui, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = Monitor(eval_env)
         else:
-            train_env = MultiHoverAviary(gui=True, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
+            train_env = MultiHoverAviary(gui=gui, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = Monitor(eval_env)
         use_render_callback = True
@@ -238,11 +148,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     #### Train the model con manejo de interrupción ###########
     if continue_from and os.path.isfile(os.path.join(filename, 'final_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'final_model.zip')}")
-        model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device=DEVICE)
-        # 2. Modificar parámetros (Fine-tuning)
-        # Ejemplo de decaimiento lineal: empieza en 0.07 y baja a 0.005
-        # model.learning_rate = 0.0004
-        model.ent_coef = 0.01 
+        model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device=DEVICE,
+        ent_coef = 0.01, 
+        learning_rate = lambda p: 0.00005 + (0.00007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005)
         # model.clip_range = constant_fn(0.2)
         # El modelo ya contiene num_timesteps internamente
         model.tensorboard_log = filename+'/tb/'
@@ -256,16 +164,11 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                 n_epochs=int(10),       # Aumentado para más actualizaciones por paso
                 gae_lambda=0.95, # Valor por defecto, buen compromiso entre bias y varianza
                 learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
-                    #learning_rate=0.0001,
                     policy_kwargs=dict(
                         net_arch=[dict(pi=[60,16], vf=[64, 64])],
-                        activation_fn=torch.nn.Tanh,  # Suaviza salidas
-                        ##### TENSORBOARD MOD: Log Histograms y Gráfico #####
-                        log_std_init=-2.0, # Valor por defecto, ayuda a la estabilidad
-                        ortho_init=True, # Inicialización ortogonal para estabilidad
-                        # El registro de gradientes/pesos se activa internamente si verbose=1 
-                        # y log_interval es bajo, pero a veces necesitas forzarlo:
-                        # SB3 registra estas métricas automáticamente si tensorboard_log está seteado.
+                        activation_fn=torch.nn.Tanh,
+                        log_std_init=-2.0,
+                        ortho_init=True,
                     ),
                     
                     ent_coef=0.01,
@@ -337,12 +240,16 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         deterministic=True,
         render=False
     )
+    # ... dentro de run() ...
+    # Definimos los callbacks que queremos usar
+    slow_cb = SlowCallback(ctrl_freq=60, speed_multiplier=1.0)
+
+    # Asegúrate de que eval_callback esté bien definido antes
+    callbacks = [eval_callback, slow_cb]
     try:
-        tb_callback = TensorboardCallback(tb_log_dir=filename+'/tb/', log_freq=2000)
         if use_render_callback:
-            train_render_callback = TrainRenderCallback(train_env, sync_human_speed=False)
             model.learn(total_timesteps=int(3e7) if local else int(1e2),
-                        callback=[eval_callback, train_render_callback ],
+                        callback=eval_callback,
                         log_interval=100,
                         reset_num_timesteps=False if continue_from else True)
         else:

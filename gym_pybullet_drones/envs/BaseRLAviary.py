@@ -113,8 +113,9 @@ class BaseRLAviary(BaseAviary):
         Overrides BaseAviary's method.
 
         """
+                    
         randoms_obstacles= True
-        if False:
+        if self.OBSTACLES:
             if randoms_obstacles:
                 # p.loadURDF("block.urdf",
                 #         [np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), np.random.uniform(1.5, 2) * np.random.choice([-1, 1]), 0.5],
@@ -123,17 +124,24 @@ class BaseRLAviary(BaseAviary):
                 #       )
                 
                 # Definir la colisión (1 metro de lado = halfExtents de 0.5)
-                self.posBo[0] = [-2,-2,.8]
-                self.posBo[1]  = [2,-2,.8]
-                self.posBo[2]  = [-2,2,.8]
-                self.posBo[3]  = [2,2,.8]
+                # self.posBo[0] = [-2,-2,.8]
+                # self.posBo[1]  = [2,-2,.8]
+                # self.posBo[2]  = [-2,2,.8]
+                # self.posBo[3]  = [2,2,.8]
+                # self.posBo[0] = [2.5,-2.5,1.8]
+                # self.posBo[1]  = [-30,-30,1.8]
+                # self.posBo[2]  = [-2.5,2.5,1.8]
+                # self.posBo[3]  = [30,30,1.8]
+                self.posBo[0] = [4,2,.8]
+                self.posBo[1]  = [6,3,.8]
+                self.posBo[2]  = [3,5,.8]
+                self.posBo[3]  = [6,6,.8]
                 
                 
-                
-                
+                #print("obstaculos!!!!!!!!!!!!!!")
                 # create multiple random boxes in the environment
-                col_id = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.8, 0.8, 0.8])
-                vis_id = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.8, 0.8, 0.8], rgbaColor=[0.8, 0.2, 0.2, 1])
+                col_id = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.4, 0.4, 1.8], physicsClientId=self.CLIENT)
+                vis_id = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.4, 0.4, 1.8], rgbaColor=[0.8, 0.2, 0.2, 1], physicsClientId=self.CLIENT)
                 for i in range(len(self.posBo)):
                     self.cubo_id[i] = p.createMultiBody(baseMass=1, # 0 lo hace estático e inamovible
                                 baseCollisionShapeIndex=col_id,
@@ -142,6 +150,23 @@ class BaseRLAviary(BaseAviary):
                                 basePosition=self.posBo[i],
                                 physicsClientId=self.CLIENT)
                 
+                # col_id2 = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.4, 0.4, .3], physicsClientId=self.CLIENT)
+                # vis_id2 = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.4, 0.4, .3], rgbaColor=[0.8, 0.2, 0.2, 1], physicsClientId=self.CLIENT)
+                # p.createMultiBody(baseMass=1, # 0 lo hace estático e inamovible
+                #                 baseCollisionShapeIndex=col_id2,
+                #                 baseVisualShapeIndex=vis_id2,
+                #                 #basePosition=[np.random.uniform(1, 3.5) * np.random.choice([-1, 1]), np.random.uniform(1, 3.5) * np.random.choice([-1, 1]), 0.8],
+                #                 basePosition=[1,1,.3],
+                #                 physicsClientId=self.CLIENT)
+                
+                # col_id3 = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.4, 0.4, .4], physicsClientId=self.CLIENT)
+                # vis_id3 = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.4, 0.4, .4], rgbaColor=[0.8, 0.2, 0.2, 1], physicsClientId=self.CLIENT)
+                # p.createMultiBody(baseMass=1, # 0 lo hace estático e inamovible
+                #                 baseCollisionShapeIndex=col_id3,
+                #                 baseVisualShapeIndex=vis_id3,
+                #                 #basePosition=[np.random.uniform(1, 3.5) * np.random.choice([-1, 1]), np.random.uniform(1, 3.5) * np.random.choice([-1, 1]), 0.8],
+                #                 basePosition=[-1,-1,.4],
+                #                 physicsClientId=self.CLIENT)
                 
                 # p.loadURDF("cube_small.urdf",
                 #     [np.random.uniform(2.5, 3),np.random.uniform(2.5, 3), 0.5],
@@ -179,7 +204,7 @@ class BaseRLAviary(BaseAviary):
                 )
 
                 # 2. Crear la forma de colisión FORZANDO malla cóncava (Trimesh)
-                collision_id = p.createCollisionShape(
+                collision_id = p.createCollisionShape(physicsClientId=self.CLIENT,
                     shapeType=p.GEOM_MESH,
                     fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
                     meshScale=[2, 2, 2],
@@ -187,7 +212,7 @@ class BaseRLAviary(BaseAviary):
                 )
 
                 # 3. Crear el cuerpo en el mundo
-                mapa_id = p.createMultiBody(
+                mapa_id = p.createMultiBody(physicsClientId=self.CLIENT,
                     baseMass=0,
                     baseCollisionShapeIndex=collision_id,
                     baseVisualShapeIndex=visual_id,
