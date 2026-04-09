@@ -446,7 +446,7 @@ class BaseRLAviary(BaseAviary):
             for i in range(self.LIDAR_BUFFER_SIZE):
                 ret = np.hstack([ret, np.array([self.lidar_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
                 
-            # print(ret)
+            #print(ret)
             return ret
             ############################################################
         else:
