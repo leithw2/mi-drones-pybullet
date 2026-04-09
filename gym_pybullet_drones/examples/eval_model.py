@@ -92,6 +92,6 @@ if __name__ == '__main__':
     parser.add_argument('--colab', default=False, type=bool, help='Modo Colab')
     parser.add_argument('--episodes', default=90, type=int, help='Cantidad de episodios a evaluar')
     parser.add_argument('--max_steps', default=None, type=int, help='Máximo de pasos por episodio')
-    parser.add_argument('--speed_factor', default=.1, type=float, help='Multiplicador de velocidad de la visualización (1.0=normal, <1.0=rápido, >1.0=lento)')
+    parser.add_argument('--speed_factor', default=1, type=float, help='Multiplicador de velocidad de la visualización (1.0=normal, <1.0=rápido, >1.0=lento)')
     args = parser.parse_args()
     evaluate_model(**vars(args))
