@@ -98,7 +98,7 @@ class BaseRLAviary(BaseAviary):
                          ctrl_freq=ctrl_freq,
                          gui=gui,
                          record=record, 
-                         obstacles=True, # Add obstacles for RGB observations and/or FlyThruGate
+                         obstacles=False, # Add obstacles for RGB observations and/or FlyThruGate
                          user_debug_gui=False, # Remove of RPM sliders from all single agent learning aviaries
                          vision_attributes=vision_attributes,
                          )
@@ -434,7 +434,7 @@ class BaseRLAviary(BaseAviary):
                 # lastes_distance es la distancia al target de la observación anterior, que se guarda en un buffer para ser incluido en la observación actual y darle al agente información sobre hacia dónde se dirigía en el paso anterior, lo cual puede ser útil para aprender a evitar obstáculos y para problemas de control más complejos donde la observación actual no es suficiente para determinar la acción óptima (problemas no-Markovianos). En este caso, se incluye en la observación actual para ayudar al agente a aprender a evitar obstáculos, ya que la distancia al target puede estar dentro o cerca de un obstáculo y el agente puede necesitar aprender a desviarse de ese target para evitar chocar contra el obstáculo.
                 self.observation_buffer.append(distance)
                 lastes_distance = self.observation_buffer[-2] if len(self.observation_buffer) > 1 else np.zeros(3)
-                obs_12[i, :] = np.hstack([distance, lastes_distance,  obs[7:10], obs[13:16]]).reshape(12,)
+                obs_12[i, :] = np.hstack([distance, obs[0:3] ,  obs[7:10], obs[13:16]]).reshape(12,)
                 #print("distance:", distance)
                 #print("lastes_distance:", lastes_distance)
                 l = np.tile(lidar, (self.NUM_DRONES, 1))
