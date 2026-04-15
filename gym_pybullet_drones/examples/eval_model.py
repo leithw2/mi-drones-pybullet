@@ -23,9 +23,9 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video,
-                               initial_xyzs=np.array([[0,0,3]]),
+                               initial_xyzs=np.array([[0,2,1]]),
                                initial_rpys=np.array([[0,0,0]]),
-                               random_targets=False, physics=Physics.PYB, pyb_freq = 240, ctrl_freq = 60)
+                               random_targets=True, physics=Physics.PYB, pyb_freq = 240, ctrl_freq = 60)
     else:
         test_env = MultiHoverAviary(gui=gui,
                                     num_drones=DEFAULT_AGENTS,
@@ -84,7 +84,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results', 'obs29_bufferAction1_60x16_64x64_lidarinverso_nowind_save-03.24.2026', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
+    parser.add_argument('--model_path', type=str, default= os.path.join('results', 'IMU_test04.10.2026_16.29.37', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
     parser.add_argument('--record_video', default=True, type=bool, help='Grabar video (default: False)')

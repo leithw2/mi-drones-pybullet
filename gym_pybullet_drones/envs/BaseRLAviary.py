@@ -75,6 +75,7 @@ class BaseRLAviary(BaseAviary):
         vision_attributes = True if obs == ObservationType.RGB else False
         self.OBS_TYPE = obs
         self.ACT_TYPE = act
+        self.prev_v = np.zeros( 3) # placeholder for previous velocity to calculate acceleration for the IMU readings in the kinematic observation space, initialized at zero
         
         self.posBo = [None for i in range(4)] # placeholder for obstacle positions in case we want to remove them later
         self.cubo_id = [None for i in range(4)] # placeholder for obstacle ids in case we want to remove them later
@@ -409,11 +410,32 @@ class BaseRLAviary(BaseAviary):
                                           )
             return np.array([self.rgb[i] for i in range(self.NUM_DRONES)]).astype('float32')
         elif self.OBS_TYPE == ObservationType.KIN:
+
+            
+            
             # OBS SPACE OF SIZE 15: 12 originales + 3 para TARGET_POS
             obs_12 = np.zeros((self.NUM_DRONES,12))
             #lidar = self.lidar if hasattr(self, 'lidar') else np.zeros(5) # placeholder for lidar readings in case the environment doesn't have a lidar sensor, to avoid attribute errors and allow the use of the same observation space for all environments regardless of the presence of a lidar sensor. The shape of the lidar reading is (NUM_DRONES, 5) because we have 5 rays in our simple lidar sensor, but it can be changed as needed.
             for i in range(self.NUM_DRONES):
                 obs = self._getDroneStateVector(i)
+                # 1. Obtener velocidad actual
+                current_v = obs[10:13]
+
+                # 2. Calcular aceleración (dv/dt)
+                # Nota: necesitas guardar la velocidad del paso anterior (self.prev_v)
+                dt = 1 / self.PYB_FREQ
+                acceleration = (current_v - self.prev_v) / dt
+                #print("Velocidad actual:", current_v)
+                #print("Velocidad anterior:", self.prev_v)
+                #print("Aceleración calculada:", acceleration)
+                self.prev_v = current_v
+                #print("Velocidad anterior actualizada:", self.prev_v)
+                # 3. Añadir gravedad (la IMU siente la reacción a la gravedad)
+                gravity = [0, 0, 9.81]
+                imu_accel_global = acceleration + gravity
+
+                # 4. Rotar al Body Frame (igual que hicimos con el giro)
+                
                 # Concatenar TARGET_POS a la observación
                 if hasattr(self, 'TARGET_POS'):
                     if self.NUM_DRONES == 1:
@@ -424,7 +446,9 @@ class BaseRLAviary(BaseAviary):
                 else:
                     target = np.zeros(3)
                 lidar = self.lidar
-                obs_12[i, :] = np.hstack([target, obs[7:10], obs[10:13], obs[13:16]]).reshape(12,)
+                #print("acceleración IMU en el paso actual:", imu_accel_global)
+                obs_12[i, :] = np.hstack([target, obs[7:10], imu_accel_global, obs[13:16]]).reshape(12,)
+                
                 l = np.tile(lidar, (self.NUM_DRONES, 1))
                 self.lidar_buffer.append(l)
             ret = np.array([obs_12[i, :] for i in range(self.NUM_DRONES)]).astype('float32')

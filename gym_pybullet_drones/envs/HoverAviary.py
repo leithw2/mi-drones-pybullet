@@ -49,7 +49,7 @@ class HoverAviary(BaseRLAviary):
 
         """
         self.random_targets = random_targets
-        self.one_only_target = False
+        self.one_only_target = True
         self.TARGET_POS = np.array([9,9,1])
         #print("Target position: " + str(self.TARGET_POS))
         self.EPISODE_LEN_SEC = 30
@@ -156,8 +156,9 @@ class HoverAviary(BaseRLAviary):
         
         
         elif(self.one_only_target and not self.random_targets):
-            self.TARGET_POS = np.array([3,4,2])
+            self.TARGET_POS = np.array([0,0,2])
             self.pasos = 0
+            
             self._draw_target_marker([0, 1, 0])
         self.truncate_early = False
         #print(self.TARGET_POS)
@@ -295,15 +296,16 @@ class HoverAviary(BaseRLAviary):
 
         elif(self.one_only_target):
             #print(f"New target position: {self.TARGET_POS}")
-            if dist < .1 and np.linalg.norm(vel) < 0.1 and abs(angles[0]) < 0.1 and abs(angles[1]) < 0.1:
-                bonus = 6.2
+            if dist < .6 and np.linalg.norm(vel) < 0.6 and abs(angles[0]) < 0.4 and abs(angles[1]) < 0.4:
+                bonus = 2.2
                 #print("Hovering achieved!")
+                self.score = self.score + 1
                 self.time_penalty = 0
             else:
                 #print("try Hovering!")
                 pass
         else:
-            if dist < 0.3 and np.linalg.norm(vel) < 0.6 and abs(angles[0]) < 0.4 and abs(angles[1]) < 0.4:
+            if dist < 0.2 and np.linalg.norm(vel) < 0.6 and abs(angles[0]) < 0.4 and abs(angles[1]) < 0.4:
                 self.TARGET_POS = self.point_track.pop(0)
                 self.time_penalty = 0
                 bonus = (300/self.pasos) * (self.score*1)
@@ -318,7 +320,7 @@ class HoverAviary(BaseRLAviary):
             
             penaltyLidar = -3* (0.7 - np.max(self.lidar)) # penalización proporcional a lo cerca que esté el obstáculo, con un máximo de -5 cuando el obstáculo está a 0.0m de distancia
         
-        if self.score == 16:
+        if self.score == 300:
             print("¡Puntuación máxima alcanzada! Reiniciando entorno.")
             self.truncate_early = True
             self.time_penalty = 0
@@ -366,6 +368,18 @@ class HoverAviary(BaseRLAviary):
         penalty = 200 / self.score # Penalización que disminuye a medida que se alcanzan más objetivos
         state = self._getDroneStateVector(0)
         
+        if self.time_penalty < -1:
+            print("static Truncated - reward: "  + str(self.actual_reward-000))
+            print('score', self.score)
+            self.actual_reward = 0 
+
+            return True,
+        
+        if self.truncate_early:
+            print("Early Truncated - reward: "  + str(self.actual_reward))
+            self.actual_reward = 0
+            self.truncate_early = False
+            return True, penalty
         
         if (abs(state[0]) > 10 or abs(state[1]) > 10 or state[2] > 80 # Truncate when the drone is too far away
         ):
@@ -400,7 +414,7 @@ class HoverAviary(BaseRLAviary):
             print("target reached - reward: "  + str(self.actual_reward - penalty))
             print('score', self.score)
             self.actual_reward = 0
-            return True, 0
+            return False, 0
         else:
             return False, 0
     ################################################################################
@@ -415,18 +429,8 @@ class HoverAviary(BaseRLAviary):
 
         """
         
-        if self.time_penalty < -1:
-            print("static Truncated - reward: "  + str(self.actual_reward-000))
-            print('score', self.score)
-            self.actual_reward = 0 
 
-            return True,
-        
-        if self.truncate_early:
-            print("Early Truncated - reward: "  + str(self.actual_reward))
-            self.actual_reward = 0
-            self.truncate_early = False
-            return True
+
             
         if self.step_counter/self.PYB_FREQ > self.EPISODE_LEN_SEC*10:
             print("Time Truncated - reward: "  + str(self.actual_reward))
