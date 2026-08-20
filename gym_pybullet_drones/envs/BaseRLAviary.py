@@ -133,10 +133,10 @@ class BaseRLAviary(BaseAviary):
                 # self.posBo[1]  = [-30,-30,1.8]
                 # self.posBo[2]  = [-2.5,2.5,1.8]
                 # self.posBo[3]  = [30,30,1.8]
-                self.posBo[0] = [4,2,.8]
-                self.posBo[1]  = [6,3,.8]
-                self.posBo[2]  = [3,5,.8]
-                self.posBo[3]  = [6,6,.8]
+                self.posBo[0] = [4,2,1.8]
+                self.posBo[1]  = [6,3,1.8]
+                self.posBo[2]  = [3,5,1.8]
+                self.posBo[3]  = [6,6,1.8]
                 
                 
                 #print("obstaculos!!!!!!!!!!!!!!")
@@ -433,7 +433,8 @@ class BaseRLAviary(BaseAviary):
                 # 3. Añadir gravedad (la IMU siente la reacción a la gravedad)
                 gravity = [0, 0, 9.81]
                 imu_accel_global = acceleration + gravity
-
+                # 
+                
                 # 4. Rotar al Body Frame (igual que hicimos con el giro)
                 
                 # Concatenar TARGET_POS a la observación
@@ -447,7 +448,7 @@ class BaseRLAviary(BaseAviary):
                     target = np.zeros(3)
                 lidar = self.lidar
                 #print("acceleración IMU en el paso actual:", imu_accel_global)
-                obs_12[i, :] = np.hstack([target, obs[7:10], imu_accel_global, obs[13:16]]).reshape(12,)
+                obs_12[i, :] = np.hstack([target, obs[7:10], current_v, obs[13:16]]).reshape(12,)
                 
                 l = np.tile(lidar, (self.NUM_DRONES, 1))
                 self.lidar_buffer.append(l)

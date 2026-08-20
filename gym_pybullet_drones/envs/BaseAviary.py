@@ -539,10 +539,57 @@ class BaseAviary(gym.Env):
         #     self.lidar = self._update_lidar()
         p.removeAllUserDebugItems(physicsClientId=self.CLIENT)
         self.lidar_ids = [-1] * 5 # Resetear IDs para que se creen de nuevo
+        self.lidar_ids8x8 = [-1] * 64 # Resetear IDs para que se creen de nuevo
+
             
     
     ################################################################################
     def _update_lidar(self):
+        
+        # 1. Obtener el estado actual del dron
+        pos, quat = p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)
+        
+        # 2. Definir una rejilla 8x8 de rayos en coordenadas locales.
+        # X es frente, Y izquierda y Z arriba; el FOV es de 30 grados.
+        fov = np.deg2rad(30)
+        angles = np.linspace(-fov / 2, fov / 2, 8)
+        locales = []
+        for vertical in angles:
+            for horizontal in angles:
+                locales.append([
+                    2 * np.cos(vertical) * np.cos(horizontal),
+                    2 * np.cos(vertical) * np.sin(horizontal),
+                    2 * np.sin(vertical)
+                ])
+        
+        ray_to_list = []
+        for loc_point in locales:
+            # multiplyTransforms combina (pos1, quat1) con (pos2, quat2)
+            # Como solo queremos rotar un punto, pasamos un cuaternión nulo [0,0,0,1]
+            global_ray_to, _ = p.multiplyTransforms(pos, quat, loc_point, [0, 0, 0, 1])
+            ray_to_list.append(global_ray_to)
+
+        ray_from_list = [pos] * 64
+
+        # 3. Test de rayos
+        result = p.rayTestBatch(ray_from_list, ray_to_list, physicsClientId=self.CLIENT)
+
+        # 4. Guardar las lecturas como una matriz 8x8 de proximidad normalizada
+        distances = np.array([
+            1 - (hit[2] if hit[0] != -1 else 1)
+            for hit in result
+        ]).reshape(8, 8)
+
+        # Visualización
+        if self.GUI:
+            for i in range(64):
+                color = [1, 0, 0] if result[i][0] != -1 else [0, 1, 0]
+                self.lidar_ids8x8[i] = p.addUserDebugLine(
+                    pos, ray_to_list[i], color, 
+                    physicsClientId=self.CLIENT, 
+                    replaceItemUniqueId=self.lidar_ids8x8[i]
+                )
+        
         # 1. Obtener el estado actual del dron
         pos, quat = p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)
         

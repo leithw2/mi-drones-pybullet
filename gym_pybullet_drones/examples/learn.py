@@ -57,7 +57,7 @@ except Exception:
     pass
 #N_ENVS = min(16, max(1, (os.cpu_count() or 1)))
 N_ENVS = 12 # For debugging, set to 1 to avoid multiprocessing issues
-DEFAULT_GUI = False
+DEFAULT_GUI = True
 DEFAULT_RECORD_VIDEO = False
 DEFAULT_OUTPUT_FOLDER = 'results'
 DEFAULT_COLAB = False
@@ -67,8 +67,8 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'IMU_test04.15.2026_19.45.07')
-#CONTINUE_FROM = None # None or path to saved model folder
+#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'IMU_test04.15.2026_19.45.07')
+CONTINUE_FROM = None # None or path to saved model folder
 RANDOM_TARGETS=False
 
 
@@ -78,6 +78,7 @@ class SlowCallback(BaseCallback):
         self.step_time = 1.0 / ctrl_freq
         self.speed_multiplier = speed_multiplier
         self.last_step_real_time = 0
+
 
     def _on_step(self) -> bool:
         if self.last_step_real_time == 0:
@@ -106,7 +107,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'IMU_test'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'ToF'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
@@ -165,7 +166,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                 gae_lambda=0.95, # Valor por defecto, buen compromiso entre bias y varianza
                 learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
                     policy_kwargs=dict(
-                        net_arch=[dict(pi=[58,16], vf=[64, 64])],
+                        net_arch=[dict(pi=[16,16], vf=[64, 64])],
                         activation_fn=torch.nn.Tanh,
                         log_std_init=-2.0,
                         ortho_init=True,
