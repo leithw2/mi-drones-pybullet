@@ -10,6 +10,7 @@ except Exception:
 import threading
 import time
 from stable_baselines3 import PPO
+import glob
 from gym_pybullet_drones.envs.HoverAviary import HoverAviary
 from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
 from gym_pybullet_drones.utils.Logger import Logger
@@ -63,6 +64,11 @@ class EvalModelGUI:
         }
         
         self._create_gui()
+        # Poblar la lista de modelos al iniciar
+        try:
+            self._refresh_model_list()
+        except Exception:
+            pass
         
     def _create_gui(self):
         """Crear la interfaz gráfica"""
@@ -100,11 +106,13 @@ class EvalModelGUI:
         model_frame.pack(fill=tk.X, padx=5, pady=5)
         
         ttk.Label(model_frame, text="Ruta Modelo:").pack(anchor=tk.W)
-        model_entry = ttk.Entry(model_frame, textvariable=self.model_path, width=25)
-        model_entry.pack(fill=tk.X, pady=5)
-        
-        ttk.Button(model_frame, text="Seleccionar...", 
-                  command=self._select_model).pack(fill=tk.X, pady=2)
+        # Combobox con la lista de modelos encontrados en la carpeta de resultados
+        self.model_combo = ttk.Combobox(model_frame, textvariable=self.model_path, width=60)
+        self.model_combo.pack(fill=tk.X, pady=5)
+        btns_frame = ttk.Frame(model_frame)
+        btns_frame.pack(fill=tk.X)
+        ttk.Button(btns_frame, text="Seleccionar...", command=self._select_model).pack(side=tk.LEFT, fill=tk.X, expand=True, pady=2, padx=(0,5))
+        ttk.Button(btns_frame, text="Refrescar lista", command=self._refresh_model_list).pack(side=tk.LEFT, fill=tk.X, expand=True, pady=2)
         
         # === SECCIÓN PARÁMETROS ===
         params_frame = ttk.LabelFrame(scrollable_frame, text="Parámetros", padding=10)
@@ -233,6 +241,33 @@ class EvalModelGUI:
         )
         if filename:
             self.model_path.set(filename)
+            # Si usamos el combobox, asegurarnos de que la selección esté en la lista
+            try:
+                if hasattr(self, 'model_combo') and filename not in self.model_combo['values']:
+                    vals = list(self.model_combo['values']) if self.model_combo['values'] else []
+                    vals.insert(0, filename)
+                    self.model_combo['values'] = vals
+            except Exception:
+                pass
+
+    def _refresh_model_list(self):
+        """Buscar modelos .zip en la carpeta de resultados y actualizar el combobox"""
+        try:
+            out_dir = self.eval_params['output_folder'].get() if 'output_folder' in self.eval_params else 'results'
+            # Buscar recursivamente .zip
+            pattern = os.path.join(out_dir, '**', '*.zip')
+            files = glob.glob(pattern, recursive=True)
+            # Añadir también búsqueda en 'results' si no encontrada
+            if not files and out_dir != 'results':
+                files = glob.glob(os.path.join('results', '**', '*.zip'), recursive=True)
+            files = sorted(files, key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0, reverse=True)
+            if hasattr(self, 'model_combo'):
+                self.model_combo['values'] = files
+                # Si hay elementos, seleccionar el primero si no hay valor actual
+                if files and (not self.model_path.get() or self.model_path.get() not in files):
+                    self.model_path.set(files[0])
+        except Exception:
+            pass
             
     def _start_evaluation(self):
         """Iniciar evaluación"""
