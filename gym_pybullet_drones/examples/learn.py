@@ -57,7 +57,7 @@ except Exception:
     pass
 #N_ENVS = min(16, max(1, (os.cpu_count() or 1)))
 N_ENVS = 12 # For debugging, set to 1 to avoid multiprocessing issues
-DEFAULT_GUI = True
+DEFAULT_GUI = False
 DEFAULT_RECORD_VIDEO = False
 DEFAULT_OUTPUT_FOLDER = 'results'
 DEFAULT_COLAB = False
@@ -67,9 +67,9 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'IMU_test04.15.2026_19.45.07')
-CONTINUE_FROM = None # None or path to saved model folder
-RANDOM_TARGETS=False
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'ToF_hovering08.23.2026_14.02.02')
+#CONTINUE_FROM = None # None or path to saved model folder
+RANDOM_TARGETS=True
 
 
 class SlowCallback(BaseCallback):
@@ -107,7 +107,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'ToF'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'ToF_hovering'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
