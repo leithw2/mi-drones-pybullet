@@ -14,6 +14,10 @@ from RewardPlotter import RewardPlotter
 import time
 import os
 
+# Obtener el directorio raíz del proyecto (3 niveles arriba de este archivo)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(SCRIPT_DIR, 'results')
+
 def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, output_folder='results', colab=False, episodes=30, max_steps=3000000, speed_factor=1.0):
     DEFAULT_OBS = ObservationType('kin')
     DEFAULT_ACT = ActionType('rpm')
@@ -26,7 +30,7 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
                                #initial_xyzs=np.array([[np.random.uniform(-0.25, 0.25), np.random.uniform(-0.25, 0.25), 1]]),
                                initial_xyzs=np.array([[0, 0, 1]]),
                                initial_rpys=np.array([[0, 0, 0]]),
-                               random_targets=True, physics=Physics.PYB, pyb_freq = 240, ctrl_freq = 60)
+                               random_targets=False, physics=Physics.PYB, pyb_freq = 240, ctrl_freq = 60)
     else:
         test_env = MultiHoverAviary(gui=gui,
                                     num_drones=DEFAULT_AGENTS,
@@ -85,7 +89,8 @@ def evaluate_model(model_path, multiagent=False, gui=True, record_video=False, o
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones')
-    parser.add_argument('--model_path', type=str, default= os.path.join('results', 'ToF_gemini08.29.2026_17.20.22', 'final_model'), help='Ruta al archivo .zip del modelo PPO')
+    default_model_path = os.path.join(RESULTS_DIR, 'ToF_yawLocal09.02.2026_18.43.31', 'best_model')
+    parser.add_argument('--model_path', type=str, default=default_model_path, help='Ruta al archivo .zip del modelo PPO')
     parser.add_argument('--multiagent', default=False, type=bool, help='Usar MultiHoverAviary (default: False)')
     parser.add_argument('--gui', default=True, type=bool, help='Mostrar GUI (default: True)')
     parser.add_argument('--record_video', default=True, type=bool, help='Grabar video (default: False)')
@@ -93,6 +98,6 @@ if __name__ == '__main__':
     parser.add_argument('--colab', default=False, type=bool, help='Modo Colab')
     parser.add_argument('--episodes', default=90, type=int, help='Cantidad de episodios a evaluar')
     parser.add_argument('--max_steps', default=None, type=int, help='Máximo de pasos por episodio')
-    parser.add_argument('--speed_factor', default=1, type=float, help='Multiplicador de velocidad de la visualización (1.0=normal, <1.0=rápido, >1.0=lento)')
+    parser.add_argument('--speed_factor', default=5, type=float, help='Multiplicador de velocidad de la visualización (1.0=normal, <1.0=rápido, >1.0=lento)')
     args = parser.parse_args()
     evaluate_model(**vars(args))

@@ -67,9 +67,9 @@ DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'ToF_gemini08.29.2026_17.20.22')
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'ToF_yawLocal09.02.2026_18.43.31')
 #CONTINUE_FROM = None # None or path to saved model folder
-RANDOM_TARGETS=True # True or False
+RANDOM_TARGETS=False # True or False
 
 
 class SlowCallback(BaseCallback):
@@ -107,7 +107,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'ToF_gemini'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'ToF_yawLocal'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
@@ -129,7 +129,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                     n_envs=N_ENVS,
                                     seed=0,
                                     )
-            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics,ctrl_freq =60 )
+            eval_env =              HoverAviary    (obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60)
             eval_env = Monitor(eval_env)
         else:
             train_env = make_vec_env(MultiHoverAviary,
@@ -147,11 +147,12 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
 
 
     #### Train the model con manejo de interrupción ###########
-    if continue_from and os.path.isfile(os.path.join(filename, 'final_model.zip')):
-        print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'final_model.zip')}")
-        model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device=DEVICE,
-        ent_coef = 0.01, 
-        learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005)
+    if continue_from and os.path.isfile(os.path.join(filename, 'best_model.zip')):
+        print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'best_model.zip')}")
+        model = PPO.load(os.path.join(filename, 'best_model.zip'), env=train_env, device=DEVICE,
+        ent_coef = 0.005, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
+        target_kl=0.03, # Aumentado para permitir más 
+        learning_rate = lambda p: 0.0009 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005)
         # model.clip_range = constant_fn(0.2)
         # El modelo ya contiene num_timesteps internamente
         model.tensorboard_log = filename+'/tb/'
@@ -164,9 +165,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                 batch_size=int(256*4),    # Reducido para permitir más actualizaciones por paso, pero puede aumentar la varianza del gradiente
                 n_epochs=int(10),       # Aumentado para más actualizaciones por paso
                 gae_lambda=0.95, # Valor por defecto, buen compromiso entre bias y varianza
-                learning_rate = lambda p: 0.0001 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
+                learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
                     policy_kwargs=dict(
-                        net_arch=[dict(pi=[256, 256, 182], vf=[256, 256, 128])],
+                        net_arch=[dict(pi=[256, 256, 128], vf=[256, 256, 128])],
                         activation_fn=torch.nn.Tanh,
                         log_std_init=-2.0,
                         ortho_init=True,
@@ -277,8 +278,8 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     #if os.path.isfile(filename+'/final_model.zip'):
     #    path = filename+'/final_model.zip' 
     path = None
-    if os.path.isfile(filename+'/best_model.zip'):
-        path = filename+'/best_model.zip'
+    if os.path.isfile(filename+'/final_model.zip'):
+        path = filename+'/final_model.zip'
     elif os.path.isfile(filename+'/final_model.zip'):
         path = filename+'/final_model.zip'
     else:
