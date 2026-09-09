@@ -33,7 +33,7 @@ class BaseAviary(gym.Env):
                  ctrl_freq: int = 240,
                  gui=False,
                  record=False,
-                 obstacles=True,
+                 obstacles=False,
                  user_debug_gui=True,
                  vision_attributes=False,
                  output_folder='results'
@@ -226,6 +226,8 @@ class BaseAviary(gym.Env):
         self._housekeeping()
         #### Update and store the drones kinematic information #####
         self._updateAndStoreKinematicInformation()
+        self.obstacle_collision = self._checkObstacleCollision()
+        self.lidar = np.tile(self._update_lidar(), (self.NUM_DRONES, 1))
         #### Start video recording #################################
         self._startVideoRecording()
         
@@ -270,6 +272,7 @@ class BaseAviary(gym.Env):
         self._housekeeping()
         #### Update and store the drones kinematic information #####
         self._updateAndStoreKinematicInformation()
+        self.lidar = np.tile(self._update_lidar(), (self.NUM_DRONES, 1))
         #### Start video recording #################################
         self._startVideoRecording()
         #### Return the initial observation ########################
@@ -278,7 +281,48 @@ class BaseAviary(gym.Env):
         return initial_obs, initial_info
     
     ################################################################################
+    def update_fpv_gui_camera(self, drone_id=0, offset_forward=-0.15):
+        """Coloca la cámara en la nariz del dron proyectando la posición objetivo hacia adelante."""
+        pos, quat = p.getBasePositionAndOrientation(self.DRONE_IDS[drone_id], physicsClientId=self.CLIENT)
+        rpy = p.getEulerFromQuaternion(quat)
 
+        # Convertir orientación a matriz de rotación 3x3
+        rot_matrix = np.array(p.getMatrixFromQuaternion(quat)).reshape(3, 3)
+
+        # Vector hacia adelante en el sistema local del dron (Eje X local)
+        forward_vec = rot_matrix @ np.array([offset_forward, 0.0, 0.0])
+        
+        # Nueva posición del objetivo ligeramente al frente del dron
+        front_pos = np.array(pos) + forward_vec
+
+        pitch_deg = np.degrees(rpy[1])
+        yaw_deg = np.degrees(rpy[2])
+
+        p.resetDebugVisualizerCamera(
+            cameraDistance=0.001,
+            cameraYaw=yaw_deg - 90,
+            cameraPitch=pitch_deg,
+            cameraTargetPosition=front_pos+np.array([0, 0, 0.05]),
+            physicsClientId=self.CLIENT
+        )
+        #####DEBUGGER William#
+        # if hasattr(self, 'TARGET_POS'):
+        #     target_pos = self.TARGET_POS[drone_id] if self.NUM_DRONES > 1 else self.TARGET_POS
+        #     delta_pos_global = target_pos - np.array(pos)
+        #     dist_total = np.linalg.norm(delta_pos_global)
+        #     u_unit_global = delta_pos_global / (dist_total + 1e-8)
+
+        #     # Proyección al sistema de ejes local del dron
+        #     u_unit_local = rot_matrix.T @ u_unit_global
+
+        #     # Azimut en el marco del dron: 0° = Centro del lente, +90° = Izquierda, -90° = Derecha
+        #     azimuth_local_deg = np.degrees(np.arctan2(u_unit_local[1], u_unit_local[0]))
+        #     elevation_local_deg = np.degrees(np.arcsin(np.clip(u_unit_local[2], -1.0, 1.0)))
+            
+        #     print(azimuth_local_deg, elevation_local_deg)
+
+        #     return u_unit_local, azimuth_local_deg, elevation_local_deg
+    
     def step(self,
              action
              ):
@@ -311,6 +355,7 @@ class BaseAviary(gym.Env):
             in each subclass for its format.
 
         """
+        # self.update_fpv_gui_camera(0)
         #### Save PNG video frames if RECORD=True and GUI=False ####
         if self.RECORD and not self.GUI and self.step_counter%self.CAPTURE_FREQ == 0:
             [w, h, rgb, dep, seg] = p.getCameraImage(width=self.VID_WIDTH,
@@ -397,8 +442,10 @@ class BaseAviary(gym.Env):
                 p.stepSimulation(physicsClientId=self.CLIENT)
             #### Save the last applied action (e.g. to compute drag) ###
             self.last_clipped_action = clipped_action
-        #### Update and store the drones kinematic information #####
-        self._updateAndStoreKinematicInformation()
+            #### Update and store the drones kinematic information #####
+            self._updateAndStoreKinematicInformation()
+            self.obstacle_collision = self._checkObstacleCollision()
+        self.lidar = np.tile(self._update_lidar(), (self.NUM_DRONES, 1))
         #### Prepare the return values #############################
         obs = self._computeObs()
         reward = self._computeReward()
@@ -410,7 +457,6 @@ class BaseAviary(gym.Env):
         info = self._computeInfo()
         #### Advance the step counter ##############################
         self.step_counter = self.step_counter + (1 * self.PYB_STEPS_PER_CTRL)
-        self.lidar = self._update_lidar()
         return obs, reward, terminated, truncated, info
     
     ################################################################################
@@ -498,7 +544,16 @@ class BaseAviary(gym.Env):
         self.last_input_switch = 0
         self.last_clipped_action = np.zeros((self.NUM_DRONES, 4))
         self.gui_input = np.zeros(4)
-        self.lidar = np.zeros((self.NUM_DRONES, 5))
+        self.lidar = np.zeros((self.NUM_DRONES, 128))
+        self.obstacle_collision = False
+        if hasattr(self, 'action_buffer'):
+            self.action_buffer.clear()
+            for _ in range(self.ACTION_BUFFER_SIZE):
+                self.action_buffer.append(np.zeros((self.NUM_DRONES, self.last_clipped_action.shape[1])))
+        if hasattr(self, 'lidar_buffer'):
+            self.lidar_buffer.clear()
+            for _ in range(self.LIDAR_BUFFER_SIZE):
+                self.lidar_buffer.append(np.zeros((self.NUM_DRONES, 128)))
         #### Initialize the drones kinemaatic information ##########
         self.pos = np.zeros((self.NUM_DRONES, 3))
         self.quat = np.zeros((self.NUM_DRONES, 4))
@@ -538,20 +593,19 @@ class BaseAviary(gym.Env):
         # for i in range(self.NUM_DRONES):
         #     self.lidar = self._update_lidar()
         p.removeAllUserDebugItems(physicsClientId=self.CLIENT)
-        self.lidar_ids = [-1] * 5 # Resetear IDs para que se creen de nuevo
-        self.lidar_ids8x8 = [-1] * 64 # Resetear IDs para que se creen de nuevo
+        self.lidar_ids = [-1] * 64 # Resetear IDs para que se creen de nuevo
+        self.previous_lidar = None
 
             
     
     ################################################################################
     def _update_lidar(self):
-        
         # 1. Obtener el estado actual del dron
         pos, quat = p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)
         
         # 2. Definir una rejilla 8x8 de rayos en coordenadas locales.
-        # X es frente, Y izquierda y Z arriba; el FOV es de 30 grados.
-        fov = np.deg2rad(30)
+        # X es frente, Y izquierda y Z arriba; el FOV es de 60 grados.
+        fov = np.deg2rad(60)
         angles = np.linspace(-fov / 2, fov / 2, 8)
         locales = []
         for vertical in angles:
@@ -575,71 +629,42 @@ class BaseAviary(gym.Env):
         result = p.rayTestBatch(ray_from_list, ray_to_list, physicsClientId=self.CLIENT)
 
         # 4. Guardar las lecturas como una matriz 8x8 de proximidad normalizada
-        distances = np.array([
+        current_lidar = np.array([
             1 - (hit[2] if hit[0] != -1 else 1)
             for hit in result
         ]).reshape(8, 8)
 
+        # Return the change from the previous reading. The first reading of an
+        # episode has no reference point, so it is reported as zero.
+        if self.previous_lidar is None:
+            lidar_delta = np.zeros_like(current_lidar)
+        else:
+            lidar_delta = current_lidar - self.previous_lidar
+        self.previous_lidar = current_lidar.copy()
+
         # Visualización
         if self.GUI:
             for i in range(64):
-                color = [1, 0, 0] if result[i][0] != -1 else [0, 1, 0]
-                self.lidar_ids8x8[i] = p.addUserDebugLine(
-                    pos, ray_to_list[i], color, 
-                    physicsClientId=self.CLIENT, 
-                    replaceItemUniqueId=self.lidar_ids8x8[i]
-                )
-        
-        # 1. Obtener el estado actual del dron
-        pos, quat = p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)
-        
-        # 2. Definir los puntos finales de los rayos en coordenadas LOCALES (relativas al dron)
-        # [x, y, z] -> Suponiendo X=frente, Y=izquierda, Z=arriba
-        locales = [
-            [0, 0, -2],  # Abajo
-            [0, 2, 0],   # Izquierda
-            [0, -2, 0],  # Derecha
-            [-2, 0, 0],  # Atrás
-            [2, 0, 0]    # Frente
-        ]
-        
-        ray_to_list = []
-        for loc_point in locales:
-            # multiplyTransforms combina (pos1, quat1) con (pos2, quat2)
-            # Como solo queremos rotar un punto, pasamos un cuaternión nulo [0,0,0,1]
-            global_ray_to, _ = p.multiplyTransforms(pos, quat, loc_point, [0, 0, 0, 1])
-            ray_to_list.append(global_ray_to)
-
-        ray_from_list = [pos] * 5
-
-        # 3. Test de rayos
-        result = p.rayTestBatch(ray_from_list, ray_to_list, physicsClientId=self.CLIENT)
-
-        # 4. Extraer distancias
-        dist_al_suelo = result[0][2] * 1 if result[0][0] != -1 else 1
-        dist_left     = result[1][2] * 1 if result[1][0] != -1 else 1
-        dist_right    = result[2][2] * 1 if result[2][0] != -1 else 1
-        dist_back     = result[3][2] * 1 if result[3][0] != -1 else 1
-        dist_front    = result[4][2] * 1 if result[4][0] != -1 else 1
-
-        dist_al_suelo = 1 - dist_al_suelo
-        dist_left     = 1 - dist_left
-        dist_right    = 1 - dist_right
-        dist_back     = 1 - dist_back
-        dist_front    = 1 - dist_front
-
-
-        # Visualización
-        if self.GUI:
-            for i in range(5):
                 color = [1, 0, 0] if result[i][0] != -1 else [0, 1, 0]
                 self.lidar_ids[i] = p.addUserDebugLine(
                     pos, ray_to_list[i], color, 
                     physicsClientId=self.CLIENT, 
                     replaceItemUniqueId=self.lidar_ids[i]
                 )
-        # print(f"Distancias LIDAR - Suelo: {dist_al_suelo:.2f}, Izquierda: {dist_left:.2f}, Derecha: {dist_right:.2f}, Atrás: {dist_back:.2f}, Frente: {dist_front:.2f}")
-        return np.array([dist_al_suelo, dist_left, dist_right, dist_back, dist_front])
+        return np.hstack([current_lidar.reshape(64), lidar_delta.reshape(64)])
+
+    def _checkObstacleCollision(self):
+        """Returns whether any drone is in contact with a registered obstacle."""
+        obstacle_ids = [obstacle_id for obstacle_id in getattr(self, 'cubo_id', [])
+                        if obstacle_id is not None]
+        if not obstacle_ids:
+            return False
+
+        return any(
+            p.getContactPoints(bodyA=int(drone_id), bodyB=int(obstacle_id), physicsClientId=self.CLIENT)
+            for drone_id in self.DRONE_IDS
+            for obstacle_id in obstacle_ids
+        )
         
     
     def _updateAndStoreKinematicInformation(self):
