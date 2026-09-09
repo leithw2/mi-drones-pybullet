@@ -83,17 +83,17 @@ class HoverAviary(BaseRLAviary):
         
         if self.GUI:
             self.fig, self.ax = plt.subplots(figsize=(6, 6))
-
+            
             self.heatmap = self.ax.imshow(
                 np.zeros((8, 8)),
+                origin="lower",
                 cmap="hot",
                 interpolation="nearest",
                 vmin=0,
                 vmax=1
             )
-
+            self.ax.invert_xaxis()
             self.fig.colorbar(self.heatmap, ax=self.ax)
-
             plt.ion()  # modo interactivo
             plt.show(block=False)
             
@@ -167,19 +167,20 @@ class HoverAviary(BaseRLAviary):
         # -------------------------------------------------------------------------
         # Paramétrización general: p va de 0.0 a 1.0
 
-        Amplitud = np.random.uniform(2,8)
+        Amplitud = np.random.uniform(5,6)
+        # print("Amplitud ", Amplitud)
         # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
         lemniscata_8 = lambda p: np.round(np.array([
             Amplitud * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
             Amplitud * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
-            1.0 + 0.3 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
+            1.2 + 0.4 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
         ]), 2)
         
         # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
         lemniscata_8_inv = lambda p: np.round(np.array([
             -Amplitud * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
             -Amplitud * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
-            1.0 + 0.3 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
+            1.2 + 0.4 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
         ]), 2)
 
         # 2. Curva de Lissajous 3D (Acoplamiento triaxial complejo)
@@ -248,6 +249,7 @@ class HoverAviary(BaseRLAviary):
             # Selección aleatoria o manual del test (0: Lemniscata, 1: Lissajous, 2: Spirograph, 3: Hélice, 4: Cuadrado)
             self.task_idx = np.random.choice(len(benchmarks))
             
+            # print("Direction ", self.task_idx )
             # Discretización razonable para dinámicas de quadcopter (entre 60 y 100 pasos por trayecto)
             self.pasos = np.random.randint(40, 60)
             self.point_track = self.generar_trayectoria(
@@ -255,6 +257,7 @@ class HoverAviary(BaseRLAviary):
                                                         pasos=self.pasos
                                                         )
 
+            # print(self.point_track)
             # Dibujar TODA la trayectoria
             self._draw_trajectory(self.point_track)
 
@@ -331,6 +334,8 @@ class HoverAviary(BaseRLAviary):
         
         delta_pos = self.TARGET_POS - pos
         dist = np.linalg.norm(delta_pos)
+        
+        
 
         if self._prev_dist is None:
             self._prev_dist = dist
@@ -357,7 +362,23 @@ class HoverAviary(BaseRLAviary):
             quat = -quat
             
         heading_alignment_reward = 0.0
+        radial_velocity = 0.0
+        velocity_toward_target_reward = 0.0
 
+        if dist > 0.15:
+
+            target_dir = delta_pos / (dist + 1e-8)
+
+            # Positivo  -> se acerca al objetivo
+            # Cero      -> movimiento tangencial
+            # Negativo  -> se aleja
+            radial_velocity = np.dot(vel, target_dir)
+
+            # Recompensamos únicamente el movimiento hacia el objetivo.
+            # El progress_reward ya penaliza alejarse.
+            velocity_toward_target_reward = (
+                0.3 * max(radial_velocity, 0.0)
+            )
         delta_xy = delta_pos[:2]
         dist_xy = np.linalg.norm(delta_xy)
 
@@ -382,11 +403,18 @@ class HoverAviary(BaseRLAviary):
                     target_dir_xy
                 )
 
-                # Recompensa continua:
-                # -1  -> completamente en dirección opuesta
-                #  0  -> perpendicular
-                # +1  -> perfectamente alineado
-                heading_alignment_reward = 0.5 * alignment_cos
+                # Recompensa de heading condicionada al movimiento hacia el objetivo
+                velocity_factor = np.clip(
+                    radial_velocity / 0.5,
+                    0.0,
+                    1.0
+                )
+
+                heading_alignment_reward = (
+                    0.5
+                    * alignment_cos
+                    * velocity_factor
+                )
 
         # 4. Estabilización de Actitud y Velocidades Angulares
         angle_penalty = -0.05 * (abs(angles[0]) + abs(angles[1]))
@@ -432,16 +460,23 @@ class HoverAviary(BaseRLAviary):
 
         if self.lidar_d0 is not None and self.lidar_d1 is not None:
 
-            d0_t0 = self.lidar_d0
-            d1_t1 = self.lidar_d1
+            # ============================================================
+            # MATRICES 8x8
+            # ============================================================
 
+            d0_t0 = self.lidar_d0.reshape(8, 8)
+            d1_t1 = self.lidar_d1.reshape(8, 8)
+
+            # Máxima proximidad actual
             max_d0 = float(np.max(d0_t0))
 
-            # ==========================================
+            # ============================================================
             # RIESGO POR PROXIMIDAD
-            # ==========================================
+            # ============================================================
 
             threshold = 0.50
+
+            penalty_dist = 0.0
 
             if max_d0 > threshold:
 
@@ -449,25 +484,42 @@ class HoverAviary(BaseRLAviary):
 
                 penalty_dist = -1.5 * (risk ** 2)
 
-                # ==========================================
-                # RIESGO POR APROXIMACIÓN
-                # ==========================================
+            # ============================================================
+            # RIESGO POR APROXIMACIÓN
+            # ============================================================
 
-                delta = d0_t0 - d1_t1
-                max_delta = float(np.max(delta))
+            delta = d0_t0 - d1_t1
 
-                penalty_approach = 0.0
+            # Suavizado espacial 3x3
+            padded = np.pad(delta, 1, mode='edge')
 
-                if max_delta > 0:
-                    penalty_approach = -3.0 * max_delta
+            delta_smooth = np.zeros_like(delta)
 
-                penaltyLidar = float(
-                    np.clip(
-                        penalty_dist + penalty_approach,
-                        -3.0,
-                        0.0
+            for i in range(8):
+                for j in range(8):
+                    delta_smooth[i, j] = np.mean(
+                        padded[i:i+3, j:j+3]
                     )
+
+            max_delta = float(np.max(delta_smooth))
+
+            penalty_approach = 0.0
+
+            if max_delta > 0.2:
+                penalty_approach = -0.3 * max_delta
+
+            # ============================================================
+            # PENALIZACIÓN TOTAL LiDAR
+            # ============================================================
+
+            penaltyLidar = float(
+                np.clip(
+                    penalty_dist + penalty_approach,
+                    -3.0,
+                    0.0
                 )
+            )
+
 
         # ============================================================
         # VELOCIDAD CERCA DE OBSTÁCULOS
@@ -499,23 +551,11 @@ class HoverAviary(BaseRLAviary):
                 0.0
             )
         )
+        # print("speed ", speed)
+        # print("obstacle_risk ", obstacle_risk)
+        # print("obstacle_speed_penalty ", obstacle_speed_penalty)
+        # print("penaltyLidar ", penaltyLidar)
 
-
-        velocity_toward_target_reward = 0.0
-
-        # if max_d0 < 0.3 and dist > 0.15:
-
-        #     target_dir = delta_pos / (dist + 1e-8)
-
-        #     velocity_toward_target = np.dot(
-        #         vel,
-        #         target_dir
-        #     )
-
-        #     velocity_toward_target_reward = (
-        #         0.2 * velocity_toward_target
-        #     )
-        
         if self.random_targets:
             self.pasos = 15
             if dist < 0.6 and np.linalg.norm(vel) < 0.6:
@@ -585,25 +625,36 @@ class HoverAviary(BaseRLAviary):
         
         # if total_reward < -2.0:
 
-        #     print(
-        #         f"""
-        #         REWARD STEP NEGATIVO
-        #         total       = {total_reward:.3f}
-        #         base        = {base_reward:.3f}
-        #         progress    = {progress_reward:.3f}
-        #         heading     = {heading_alignment_reward:.3f}
-        #         angle       = {angle_penalty:.3f}
-        #         angle_vel   = {angle_vel_penalty:.3f}
-        #         smooth      = {action_smooth_penalty:.3f}
-        #         obs_speed   = {obstacle_speed_penalty:.3f}
-        #         lidar       = {penaltyLidar:.3f}
-        #         speed       = {speed:.3f}
-        #         risk        = {obstacle_risk:.3f}
-        #         distance    = {dist:.3f}
-        #         """
-        #             )
+        # print(
+        #     f"""
+        #     REWARD STEP NEGATIVO
+        #     total       = {total_reward:.3f}
+            
+        #     obs_speed   = {obstacle_speed_penalty:.3f}
+        #     lidar       = {penaltyLidar:.3f}
+        #     velocity_toward_target_reward = {velocity_toward_target_reward:.3f}
+        #     speed       = {speed:.3f}
+        #     risk        = {obstacle_risk:.3f}
+        #     distance    = {dist:.3f}
+        #     base        = {base_reward:.3f}
+        #     progress    = {progress_reward:.3f}
+        #     heading     = {heading_alignment_reward:.3f}
+        #     angle       = {angle_penalty:.3f}
+        #     angle_vel   = {angle_vel_penalty:.3f}
+        #     smooth      = {action_smooth_penalty:.3f}
+        #     """
+        #         )
         
-        
+        if dist < 0.8:
+            print(
+                f"dist={dist:.3f} "
+                f"speed={speed:.3f} "
+                f"radial_v={radial_velocity:.3f} "
+                f"base={base_reward:.3f} "
+                f"progress={progress_reward:.3f} "
+                f"heading={heading_alignment_reward:.3f} "
+                f"bonus={bonus:.3f}"
+            )
         return total_reward
         
     import math
@@ -613,9 +664,8 @@ class HoverAviary(BaseRLAviary):
         lista_puntos = []
         for i in range(pasos + 1):
             # Aquí es donde PREPARAMOS el valor de p (de 0.0 a 1.0)
-            p = i / pasos 
+            p = (i+1) / pasos
             
-            # Aquí LLAMAMOS a la lambda que nos pases
             punto_base = formula_figura(p)
             punto = punto_base
 

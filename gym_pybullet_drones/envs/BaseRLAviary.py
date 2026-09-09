@@ -123,8 +123,8 @@ class BaseRLAviary(BaseAviary):
                 
                 self.posBo = [
                     [1.4,  -1.2, 1.8],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-                    [6.4,  1.4, 1.8],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-                    [6.4, -1.4, 1.8],  # Zona 2: Pasillo Curva Derecha (Pared externa)
+                    [6.4,  1.4, 0.0],  # Zona 2: Pasillo Curva Derecha (Pared interna)
+                    [6.4, -1.4, 1.8*0.1],  # Zona 2: Pasillo Curva Derecha (Pared externa)
                     [-6.8, 0.0, 1.8],  # Zona 3: Bloqueo Directo Curva Izquierda
                     [0.0,  1.5, 1.8],   # Zona 3: Bloqueo Directo Curva Superior
                     
@@ -132,9 +132,9 @@ class BaseRLAviary(BaseAviary):
                                         
                     [ -2.3, -2.3, 1.8],  # Zona 2: Pasillo Curva Derecha (Pared interna)
 
-                    [-2.0, 1.4, 1.8],  # Zona 2: Pasillo Curva Derecha (Pared interna)
+                    [-2.0, 1.4, 1.8*1.4],  # Zona 2: Pasillo Curva Derecha (Pared interna)
                     [ 5.0, 0.4, 1.8],  # Zona 2: Pasillo Curva Derecha (Pared externa)
-                    [-5.0, 0.4, 1.8],  # Zona 3: Bloqueo Directo Curva Izquierda
+                    [-5.0, 0.4, 1.8*1.3],  # Zona 3: Bloqueo Directo Curva Izquierda
                     [ 0.0, 1.5, 1.8]   # Zona 3: Bloqueo Directo Curva Superior
                 ]
                 
@@ -145,12 +145,12 @@ class BaseRLAviary(BaseAviary):
                 # halfExtents=[0.15, 0.15, 1.8] genera una columna de 30x30 cm x 3.6m de alto
                 col_id = p.createCollisionShape(
                     p.GEOM_BOX, 
-                    halfExtents=[0.15, 0.15, 1.8], 
+                    halfExtents=[0.15, 0.15, 0.9], 
                     physicsClientId=self.CLIENT
                 )
                 vis_id = p.createVisualShape(
                     p.GEOM_BOX, 
-                    halfExtents=[0.15, 0.15, 1.8], 
+                    halfExtents=[0.15, 0.15, 0.9], 
                     rgbaColor=[0.8, 0.2, 0.2, 1], 
                     physicsClientId=self.CLIENT
                 )
