@@ -150,9 +150,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if continue_from and os.path.isfile(os.path.join(filename, 'best_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'best_model.zip')}")
         model = PPO.load(os.path.join(filename, 'best_model.zip'), env=train_env, device=DEVICE,
-        ent_coef = 0.0004, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
-        target_kl=0.03, # Aumentado para permitir más 
-        learning_rate = lambda p: 0.00009 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005)
+        ent_coef = 0.001, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
+        target_kl=0.1, # Aumentado para permitir más 
+        learning_rate = lambda p: 0.0001 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005)
         # model.clip_range = constant_fn(0.2)
         # El modelo ya contiene num_timesteps internamente
         model.tensorboard_log = filename+'/tb/'

@@ -153,6 +153,8 @@ class HoverAviary(BaseRLAviary):
         # Habilitar orientación inicial aleatoria en Yaw
         if self.INIT_RPYS is not None:
             self.INIT_RPYS[0, 2] = np.random.uniform(-np.pi, np.pi)
+            self.INIT_RPYS[0, 2] = np.random.uniform(0,0)
+            
 
         obs, info = super().reset(*args, **kwargs)
         
@@ -167,7 +169,7 @@ class HoverAviary(BaseRLAviary):
         # -------------------------------------------------------------------------
         # Paramétrización general: p va de 0.0 a 1.0
 
-        Amplitud = np.random.uniform(5,6)
+        Amplitud = np.random.uniform(6,6)
         # print("Amplitud ", Amplitud)
         # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
         lemniscata_8 = lambda p: np.round(np.array([
@@ -244,7 +246,7 @@ class HoverAviary(BaseRLAviary):
         elif not self.one_only_target and not self.random_targets:
             # Lista de trayectorias benchmark disponibles
             # benchmarks = [lemniscata_8, lissajous_3d, spirograph_3d, helice_ascendente, waypoints_square]
-            benchmarks = [lemniscata_8, lemniscata_8_inv]
+            benchmarks = [lemniscata_8]
             
             # Selección aleatoria o manual del test (0: Lemniscata, 1: Lissajous, 2: Spirograph, 3: Hélice, 4: Cuadrado)
             self.task_idx = np.random.choice(len(benchmarks))
@@ -252,6 +254,7 @@ class HoverAviary(BaseRLAviary):
             # print("Direction ", self.task_idx )
             # Discretización razonable para dinámicas de quadcopter (entre 60 y 100 pasos por trayecto)
             self.pasos = np.random.randint(40, 60)
+            self.pasos = 60
             self.point_track = self.generar_trayectoria(
                                                         benchmarks[self.task_idx],
                                                         pasos=self.pasos
@@ -356,65 +359,7 @@ class HoverAviary(BaseRLAviary):
         progress_reward = 2.0 * (self._prev_dist - dist)
         self._prev_dist = dist
 
-        # 3. Alineación de Yaw (Normalizada)
-        quat = state[3:7].copy()
-        if quat[3] < 0:
-            quat = -quat
-            
-        heading_alignment_reward = 0.0
-        radial_velocity = 0.0
-        velocity_toward_target_reward = 0.0
-
-        if dist > 0.15:
-
-            target_dir = delta_pos / (dist + 1e-8)
-
-            # Positivo  -> se acerca al objetivo
-            # Cero      -> movimiento tangencial
-            # Negativo  -> se aleja
-            radial_velocity = np.dot(vel, target_dir)
-
-            # Recompensamos únicamente el movimiento hacia el objetivo.
-            # El progress_reward ya penaliza alejarse.
-            velocity_toward_target_reward = (
-                0.3 * max(radial_velocity, 0.0)
-            )
-        delta_xy = delta_pos[:2]
-        dist_xy = np.linalg.norm(delta_xy)
-
-        if dist_xy > 0.15:
-
-            target_dir_xy = delta_xy / dist_xy
-
-            rotation_matrix = np.asarray(
-                p.getMatrixFromQuaternion(quat)
-            ).reshape(3, 3)
-
-            forward_xy = rotation_matrix[:2, 0]
-
-            forward_norm = np.linalg.norm(forward_xy)
-
-            if forward_norm > 1e-8:
-
-                forward_xy /= forward_norm
-
-                alignment_cos = np.dot(
-                    forward_xy,
-                    target_dir_xy
-                )
-
-                # Recompensa de heading condicionada al movimiento hacia el objetivo
-                velocity_factor = np.clip(
-                    radial_velocity / 0.5,
-                    0.0,
-                    1.0
-                )
-
-                heading_alignment_reward = (
-                    0.5
-                    * alignment_cos
-                    * velocity_factor
-                )
+        
 
         # 4. Estabilización de Actitud y Velocidades Angulares
         angle_penalty = -0.05 * (abs(angles[0]) + abs(angles[1]))
@@ -527,7 +472,7 @@ class HoverAviary(BaseRLAviary):
 
         speed = np.linalg.norm(vel)
 
-        obstacle_threshold = 0.25
+        obstacle_threshold = 0.15
 
         obstacle_risk = np.clip(
             (max_d0 - obstacle_threshold) /
@@ -539,7 +484,7 @@ class HoverAviary(BaseRLAviary):
         safe_speed = 0.5
 
         obstacle_speed_penalty = (
-            -1.0
+            -2.0
             * obstacle_risk
             * (speed / safe_speed) ** 2
         )
@@ -547,7 +492,7 @@ class HoverAviary(BaseRLAviary):
         obstacle_speed_penalty = float(
             np.clip(
                 obstacle_speed_penalty,
-                -2.0,
+                -4.0,
                 0.0
             )
         )
@@ -556,6 +501,69 @@ class HoverAviary(BaseRLAviary):
         # print("obstacle_speed_penalty ", obstacle_speed_penalty)
         # print("penaltyLidar ", penaltyLidar)
 
+        # 3. Alineación de Yaw (Normalizada)
+        quat = state[3:7].copy()
+        if quat[3] < 0:
+            quat = -quat
+            
+        heading_alignment_reward = 0.0
+        radial_velocity = 0.0
+        velocity_toward_target_reward = 0.0
+
+        if dist > 0.15:
+
+            target_dir = delta_pos / (dist + 1e-8)
+
+            # Positivo  -> se acerca al objetivo
+            # Cero      -> movimiento tangencial
+            # Negativo  -> se aleja
+            radial_velocity = np.dot(vel, target_dir)
+
+            # Recompensamos únicamente el movimiento hacia el objetivo.
+            # El progress_reward ya penaliza alejarse.
+            velocity_toward_target_reward = (
+                0.3
+                * max(radial_velocity, 0.0)
+                * (1.0 - obstacle_risk)
+            )
+        delta_xy = delta_pos[:2]
+        dist_xy = np.linalg.norm(delta_xy)
+
+        if dist_xy > 0.15:
+
+            target_dir_xy = delta_xy / dist_xy
+
+            rotation_matrix = np.asarray(
+                p.getMatrixFromQuaternion(quat)
+            ).reshape(3, 3)
+
+            forward_xy = rotation_matrix[:2, 0]
+
+            forward_norm = np.linalg.norm(forward_xy)
+
+            if forward_norm > 1e-8:
+
+                forward_xy /= forward_norm
+
+                alignment_cos = np.dot(
+                    forward_xy,
+                    target_dir_xy
+                )
+
+                # Recompensa de heading condicionada al movimiento hacia el objetivo                
+                velocity_factor = np.clip(
+                    radial_velocity / 0.5,
+                    0.0,
+                    1.0
+                )
+
+                heading_alignment_reward = (
+                    0.5
+                    * alignment_cos
+                    * velocity_factor
+                    * (1.0 - obstacle_risk)
+                )
+        
         if self.random_targets:
             self.pasos = 15
             if dist < 0.6 and np.linalg.norm(vel) < 0.6:
@@ -591,8 +599,8 @@ class HoverAviary(BaseRLAviary):
 
         else:
             # MODO SEGUIMIENTO DE TRAYECTORIA (Lemniscata)
-            if dist < 0.6 and np.linalg.norm(vel) < 1.8:
-                bonus = 10.0  # BONUS FIJO
+            if dist < 0.8 and np.linalg.norm(vel) < 1.8:
+                bonus = 15.0  # BONUS FIJO
                 self.score += 1
                 self._draw_target_marker([0, 1, 0])
                 
@@ -645,16 +653,16 @@ class HoverAviary(BaseRLAviary):
         #     """
         #         )
         
-        if dist < 0.8:
-            print(
-                f"dist={dist:.3f} "
-                f"speed={speed:.3f} "
-                f"radial_v={radial_velocity:.3f} "
-                f"base={base_reward:.3f} "
-                f"progress={progress_reward:.3f} "
-                f"heading={heading_alignment_reward:.3f} "
-                f"bonus={bonus:.3f}"
-            )
+        # if dist < 0.8:
+        #     print(
+        #         f"dist={dist:.3f} "
+        #         f"speed={speed:.3f} "
+        #         f"radial_v={radial_velocity:.3f} "
+        #         f"base={base_reward:.3f} "
+        #         f"progress={progress_reward:.3f} "
+        #         f"heading={heading_alignment_reward:.3f} "
+        #         f"bonus={bonus:.3f}"
+        #     )
         return total_reward
         
     import math
