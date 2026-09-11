@@ -72,6 +72,27 @@ CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'ToF_yawLocal09.02.2026_18.43
 RANDOM_TARGETS=False # True or False
 
 
+import numpy as np
+import random
+
+class FixedSeedEvalWrapper(gym.Wrapper):
+    def __init__(self, env, seeds=list(range(10))):
+        super().__init__(env)
+        self.seeds = seeds
+        self.idx = 0
+
+    def reset(self, **kwargs):
+        current_seed = self.seeds[self.idx % len(self.seeds)]
+        kwargs['seed'] = current_seed
+        
+        # Fijar la semilla global de NumPy y Python para este episodio
+        np.random.seed(current_seed)
+        random.seed(current_seed)
+        print("current_seed ", current_seed)
+        
+        self.idx += 1
+        return self.env.reset(**kwargs)
+
 class SlowCallback(BaseCallback):
     def __init__(self, ctrl_freq, speed_multiplier=1.0, verbose=0):
         super(SlowCallback, self).__init__(verbose)
@@ -114,28 +135,33 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     # Alternar entre entrenamiento con render (GUI) y entrenamiento rápido (vectorizado)
     if gui:
         if not multiagent:
-            train_env = HoverAviary(gui=gui, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
-            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
+            train_env = HoverAviary(gui=gui, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, randomized = True)            
+            # En la sección donde creas eval_env:
+            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized=False)
             eval_env = Monitor(eval_env)
+            eval_env = FixedSeedEvalWrapper(eval_env, seeds=list(range(10))) # <-- AÑADIR ESTA LÍNEA
+            
         else:
             train_env = MultiHoverAviary(gui=gui, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
+            
             eval_env = Monitor(eval_env)
         use_render_callback = True
     else:
         if not multiagent:
             train_env = make_vec_env(HoverAviary,
-                                    env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60),
+                                    env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized = True),
                                     n_envs=N_ENVS,
-                                    seed=0,
+                                    
                                     )
-            eval_env =              HoverAviary    (obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60)
+            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized=False)
             eval_env = Monitor(eval_env)
+            eval_env = FixedSeedEvalWrapper(eval_env, seeds=list(range(10)))
         else:
             train_env = make_vec_env(MultiHoverAviary,
-                                    env_kwargs=dict(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics),
+                                    env_kwargs=dict(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics,),
                                     n_envs=N_ENVS,
-                                    seed=0,
+                                    
                                     )
             eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = Monitor(eval_env)
@@ -150,9 +176,11 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if continue_from and os.path.isfile(os.path.join(filename, 'best_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'best_model.zip')}")
         model = PPO.load(os.path.join(filename, 'best_model.zip'), env=train_env, device=DEVICE,
-        ent_coef = 0.001, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
-        target_kl=0.1, # Aumentado para permitir más 
-        learning_rate = lambda p: 0.0001 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005)
+        ent_coef = 0.0001, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
+        target_kl= 0.01, # Aumentado para permitir más 
+        clip_range = 0.1, 
+        learning_rate = lambda p: 0.00001 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005)
+        
         # model.clip_range = constant_fn(0.2)
         # El modelo ya contiene num_timesteps internamente
         model.tensorboard_log = filename+'/tb/'
@@ -166,16 +194,17 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                 n_epochs=int(10),       # Aumentado para más actualizaciones por paso
                 gae_lambda=0.95, # Valor por defecto, buen compromiso entre bias y varianza
                 learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
-                    policy_kwargs=dict(
-                        net_arch=[dict(pi=[256, 256, 128], vf=[256, 256, 128])],
-                        activation_fn=torch.nn.Tanh,
-                        log_std_init=-2.0,
-                        ortho_init=True,
-                    ),
+                policy_kwargs=dict(
+                    net_arch=[dict(pi=[256, 256, 128], vf=[256, 256, 128])],
+                    activation_fn=torch.nn.Tanh,
+                    log_std_init=-2.0,
+                    ortho_init=True,
+                ),
                     
-                    ent_coef=0.01,
-                    clip_range=0.2,
-                    verbose=1)
+                ent_coef=0.01,
+                clip_range=0.2,
+                verbose=1,                
+                )
         # dtype = torch.float16 # Cambiar a torch.float32 para 32 bits, torch.float16 para 16 bits
         # model.policy = model.policy.to(dtype=dtype)
         print(f"[INFO] Creando modelo en {filename}") #
@@ -239,7 +268,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         best_model_save_path=filename+'/',
         log_path=filename+'/',
         eval_freq=int(6000),      # ~1,000 pasos por entorno (aprox. 16.6 seg de vuelo simulado)
-        n_eval_episodes=5,
+        n_eval_episodes=10,
         deterministic=True,
         render=False
     )
@@ -357,9 +386,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
             print(terminated)
             sync(i, start, test_env.CTRL_TIMESTEP)
             if terminated:
-                obs, info = test_env.reset(seed=0, options={})
+                obs, info = test_env.reset(options={})
             if truncated:
-                obs, info = test_env.reset(seed=0, options={})    
+                obs, info = test_env.reset(options={})    
         test_env.close()
     else:
         print("[ERROR]: No se pudo cargar el modelo para la evaluación final.")

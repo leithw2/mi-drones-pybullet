@@ -10,8 +10,7 @@ class HoverAviary(BaseRLAviary):
     
     def __init__(self,
                  drone_model: DroneModel=DroneModel.CF2X,
-                 initial_xyzs=np.array([[0,0,1]]),
-                 #initial_xyzs=np.array([[np.random.uniform(-0.5, 0.5),np.random.uniform(-0.5, 0.5), np.random.uniform(1, 1.5)]]),
+                 initial_xyzs=np.array([[0, 0, 1]]),
                  initial_rpys=None,
                  physics: Physics=Physics.PYB,
                  pyb_freq: int = 240,
@@ -20,7 +19,8 @@ class HoverAviary(BaseRLAviary):
                  record=False,
                  obs: ObservationType=ObservationType.KIN,
                  act: ActionType=ActionType.RPM,
-                 random_targets: bool = False
+                 random_targets: bool = False,
+                 randomized = False
                  ):
         """Initialization of a single agent RL environment.
 
@@ -65,6 +65,10 @@ class HoverAviary(BaseRLAviary):
         self.truncate_early = False
         self.point_track = None
         self.random_value = 1.6
+        self.randomized = randomized
+        
+        if randomized:
+            initial_xyzs = np.array([[np.random.uniform(-0.8, 0.8),np.random.uniform(-0.8, 0.8), np.random.uniform(0.8, 1.5)]])
 
             
         super().__init__(drone_model=drone_model,
@@ -77,7 +81,8 @@ class HoverAviary(BaseRLAviary):
                          gui=gui,
                          record=record,
                          obs=obs,
-                         act=act
+                         act=act,
+                         randomized = randomized
                          )
     
         
@@ -150,10 +155,12 @@ class HoverAviary(BaseRLAviary):
         self.time_penalty = 0
         self.prev_action = None
         
+        
+        
         # Habilitar orientación inicial aleatoria en Yaw
-        if self.INIT_RPYS is not None:
+        if self.INIT_RPYS is not None :
             self.INIT_RPYS[0, 2] = np.random.uniform(-np.pi, np.pi)
-            self.INIT_RPYS[0, 2] = np.random.uniform(0,0)
+            # self.INIT_RPYS[0, 2] = np.random.uniform(0,0)
             
 
         obs, info = super().reset(*args, **kwargs)
@@ -168,20 +175,24 @@ class HoverAviary(BaseRLAviary):
         # BENCHMARKS TRAYECTORIAS CANÓNICAS DE LA LITERATURA DE DRONES
         # -------------------------------------------------------------------------
         # Paramétrización general: p va de 0.0 a 1.0
-
-        Amplitud = np.random.uniform(6,6)
+        if self.randomized:
+            Amplitudx = np.random.uniform(4,9)
+            Amplitudy = np.random.uniform(4,9)
+        else : 
+            Amplitudx = 6
+            Amplitudy = 6
         # print("Amplitud ", Amplitud)
         # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
         lemniscata_8 = lambda p: np.round(np.array([
-            Amplitud * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
-            Amplitud * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
+            Amplitudx * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
+            Amplitudy * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
             1.2 + 0.4 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
         ]), 2)
         
         # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
         lemniscata_8_inv = lambda p: np.round(np.array([
-            -Amplitud * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
-            -Amplitud * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
+            -Amplitudx * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
+            -Amplitudy * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
             1.2 + 0.4 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
         ]), 2)
 
@@ -246,15 +257,18 @@ class HoverAviary(BaseRLAviary):
         elif not self.one_only_target and not self.random_targets:
             # Lista de trayectorias benchmark disponibles
             # benchmarks = [lemniscata_8, lissajous_3d, spirograph_3d, helice_ascendente, waypoints_square]
-            benchmarks = [lemniscata_8]
+            benchmarks = [lemniscata_8, lemniscata_8_inv]
             
             # Selección aleatoria o manual del test (0: Lemniscata, 1: Lissajous, 2: Spirograph, 3: Hélice, 4: Cuadrado)
             self.task_idx = np.random.choice(len(benchmarks))
             
             # print("Direction ", self.task_idx )
             # Discretización razonable para dinámicas de quadcopter (entre 60 y 100 pasos por trayecto)
-            self.pasos = np.random.randint(40, 60)
-            self.pasos = 60
+            if self.randomized:
+                self.pasos = np.random.randint(40, 60)
+            else : 
+                self.pasos = 40
+            
             self.point_track = self.generar_trayectoria(
                                                         benchmarks[self.task_idx],
                                                         pasos=self.pasos
@@ -362,8 +376,8 @@ class HoverAviary(BaseRLAviary):
         
 
         # 4. Estabilización de Actitud y Velocidades Angulares
-        angle_penalty = -0.05 * (abs(angles[0]) + abs(angles[1]))
-        angle_vel_penalty = -0.03 * np.sum(np.square(angle_vel)) # Penaliza oscilaciones cuadráticas (temblor)
+        angle_penalty = -0.01 * (abs(angles[0]) + abs(angles[1]))
+        angle_vel_penalty = -0.05 * np.sum(np.square(angle_vel)) # Penaliza oscilaciones cuadráticas (temblor)
 
         # 5. Penalización de Tiempo Normalizada
         self.time_penalty = - 0.005
@@ -397,71 +411,62 @@ class HoverAviary(BaseRLAviary):
             self.fig.canvas.flush_events()
 
         # ============================================================
-        # PENALIZACIÓN
+        # PENALIZACIÓN Y LIDAR (Inicialización segura)
         # ============================================================
-
         max_d0 = 0.0
+        max_d1 = 0.0
         penaltyLidar = 0.0
+        penalty_dist = 0.0
+        penalty_approach = 0.0
+        evasion_reward = 0.0
+        blind_turn_penalty = 0.0
 
         if self.lidar_d0 is not None and self.lidar_d1 is not None:
-
-            # ============================================================
-            # MATRICES 8x8
-            # ============================================================
 
             d0_t0 = self.lidar_d0.reshape(8, 8)
             d1_t1 = self.lidar_d1.reshape(8, 8)
 
-            # Máxima proximidad actual
             max_d0 = float(np.max(d0_t0))
-
-            # ============================================================
-            # RIESGO POR PROXIMIDAD
-            # ============================================================
+            max_d1 = float(np.max(d1_t1))
 
             threshold = 0.50
 
-            penalty_dist = 0.0
-
+            # 1. RIESGO POR PROXIMIDAD ESTÁTICA
             if max_d0 > threshold:
-
                 risk = (max_d0 - threshold) / (1.0 - threshold)
+                penalty_dist = -2.0 * (risk ** 2)
 
-                penalty_dist = -1.5 * (risk ** 2)
-
-            # ============================================================
-            # RIESGO POR APROXIMACIÓN
-            # ============================================================
-
+            # 2. RIESGO POR APROXIMACIÓN
             delta = d0_t0 - d1_t1
-
-            # Suavizado espacial 3x3
             padded = np.pad(delta, 1, mode='edge')
-
             delta_smooth = np.zeros_like(delta)
-
+            
             for i in range(8):
                 for j in range(8):
-                    delta_smooth[i, j] = np.mean(
-                        padded[i:i+3, j:j+3]
-                    )
+                    delta_smooth[i, j] = np.mean(padded[i:i+3, j:j+3])
 
             max_delta = float(np.max(delta_smooth))
+            min_delta = float(np.min(delta_smooth))
 
-            penalty_approach = 0.0
+            if max_delta > 0.15:
+                penalty_approach = -0.4 * max_delta
 
-            if max_delta > 0.2:
-                penalty_approach = -0.3 * max_delta
+            # 3. EVASIÓN VS GIRO CIEGO
+            if max_d0 > threshold or max_d1 > threshold:
+                if min_delta < -0.1:
+                    rot_speed = np.sum(np.abs(angle_vel))
+                    
+                    if rot_speed > 1.1 and min_delta < -0.25:
+                        blind_turn_penalty = -2.5
+                    elif rot_speed <= 1.1:
+                        evasion_reward = 1.2 * abs(min_delta)
 
-            # ============================================================
             # PENALIZACIÓN TOTAL LiDAR
-            # ============================================================
-
             penaltyLidar = float(
                 np.clip(
-                    penalty_dist + penalty_approach,
-                    -3.0,
-                    0.0
+                    penalty_dist + penalty_approach + blind_turn_penalty + evasion_reward,
+                    -4.0,
+                    1.5
                 )
             )
 
@@ -610,7 +615,7 @@ class HoverAviary(BaseRLAviary):
                 self._prev_dist = None
 
         # Finalización por Puntuación Máxima
-        if self.score == self.pasos-1 and (self.random_targets or not self.one_only_target):
+        if self.score == 39 and (self.random_targets or not self.one_only_target):
             self.truncate_early = True
             bonus += 20.0  # Bonus de finalización acotado
 
@@ -728,7 +733,7 @@ class HoverAviary(BaseRLAviary):
             print('score', self.score)
             self.actual_reward = 0
             self.truncate_early = False
-            return True, penalty
+            return True, penalty * 0
         
         if (abs(state[0]) > 20 or abs(state[1]) > 20 or state[2] > 80 # Truncate when the drone is too far away
         ):

@@ -36,7 +36,8 @@ class BaseAviary(gym.Env):
                  obstacles=False,
                  user_debug_gui=True,
                  vision_attributes=False,
-                 output_folder='results'
+                 output_folder='results',
+                 randomized = False
                  ):
         """Initialization of a generic aviary environment.
 
@@ -355,7 +356,7 @@ class BaseAviary(gym.Env):
             in each subclass for its format.
 
         """
-        #self.update_fpv_gui_camera(0)
+        self.update_fpv_gui_camera(0)
         #### Save PNG video frames if RECORD=True and GUI=False ####
         if self.RECORD and not self.GUI and self.step_counter%self.CAPTURE_FREQ == 0:
             [w, h, rgb, dep, seg] = p.getCameraImage(width=self.VID_WIDTH,

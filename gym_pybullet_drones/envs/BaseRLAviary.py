@@ -28,7 +28,8 @@ class BaseRLAviary(BaseAviary):
                  gui=False,
                  record=False,
                  obs: ObservationType=ObservationType.KIN,
-                 act: ActionType=ActionType.RPM
+                 act: ActionType=ActionType.RPM,
+                 randomized = False
                  ):
         """Initialization of a generic single and multi-agent RL environment.
 
@@ -80,7 +81,7 @@ class BaseRLAviary(BaseAviary):
         
         self.posBo = [None for i in range(15)] # placeholder for obstacle positions in case we want to remove them later
         self.cubo_id = [None for i in range(15)] # placeholder for obstacle ids in case we want to remove them later
-        
+        self.randomized = randomized
         #### Create integrated controllers #########################
         if act in [ActionType.PID, ActionType.VEL, ActionType.ONE_D_PID]:
             os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -101,6 +102,7 @@ class BaseRLAviary(BaseAviary):
                          obstacles=True, # Add obstacles for RGB observations and/or FlyThruGate
                          user_debug_gui=False, # Remove of RPM sliders from all single agent learning aviaries
                          vision_attributes=vision_attributes,
+                         randomized = randomized
                          )
         #### Set a limit on the maximum target speed ###############
         if act == ActionType.VEL:
@@ -121,42 +123,61 @@ class BaseRLAviary(BaseAviary):
                 # ZONA 2 (Pasillos en las curvas): Pares laterales
                 # ZONA 3 (Bloqueos en la curva): Sobre el trazo
                 
-                self.posBo = [
-                    [1.4,  -1.2, 1.8],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-                    [6.4,  1.4, 0.0],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-                    [6.4, -1.4, 1.8*0.1],  # Zona 2: Pasillo Curva Derecha (Pared externa)
-                    [-6.8, 0.0, 1.8],  # Zona 3: Bloqueo Directo Curva Izquierda
-                    [0.0,  1.5, 1.8],   # Zona 3: Bloqueo Directo Curva Superior
-                    
-                    [ 2.3, 2.3, 1.8],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-                                        
-                    [ -2.3, -2.3, 1.8],  # Zona 2: Pasillo Curva Derecha (Pared interna)
 
-                    [-2.0, 1.4, 1.8*1.4],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-                    [ 5.0, 0.4, 1.8],  # Zona 2: Pasillo Curva Derecha (Pared externa)
-                    [-5.0, 0.4, 1.8*1.3],  # Zona 3: Bloqueo Directo Curva Izquierda
-                    [ 0.0, 1.5, 1.8]   # Zona 3: Bloqueo Directo Curva Superior
+                if self.randomized :
+                    posx = lambda : np.random.uniform(-.5,.5)
+                    posy = lambda : np.random.uniform(-.5,.5)
+                    posz = lambda : np.random.uniform(-1.5,1.5)
+                else:
+                    posx = lambda : 0
+                    posy = lambda : 0
+                    posz = lambda : 0
+                
+                self.posBo = [
+                    [ 1.4 + posx(), -1.2 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
+                    [ 6.4 + posx(),  1.4 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
+                    [ 6.4 + posx(), -1.4 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared externa)
+                    #[-6.8 + posx(),  0.0 + posy(), 1.0 + posz()],  # Zona 3: Bloqueo Directo Curva Izquierda
+                    
+                    [-1.0 + posx(),  2.0 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
+
+                    
+                    [ 2.3 + posx(),  2.3 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
+                                        
+                    [-2.3 + posx(), -2.3 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
+
+                    #[-2.0 + posx(),  1.4 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
+                    #[ 5.0 + posx(),  0.4 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared externa)
+                    [-5.0 + posx(),  0.4 + posy(), 1.0 + posz()],  # Zona 3: Bloqueo Directo Curva Izquierda
+                    #[ 5.0 + posx(),  1.5 + posy(), 1.0 + posz()]   # Zona 3: Bloqueo Directo Curva Superior
                 ]
                 
                 # Inicializar diccionario/lista de IDs si no existe
                 self.cubo_id = {} if not hasattr(self, 'cubo_id') else self.cubo_id
                 
-                # 2. Crear las formas en PyBullet
-                # halfExtents=[0.15, 0.15, 1.8] genera una columna de 30x30 cm x 3.6m de alto
-                col_id = p.createCollisionShape(
-                    p.GEOM_BOX, 
-                    halfExtents=[0.15, 0.15, 0.9], 
-                    physicsClientId=self.CLIENT
-                )
-                vis_id = p.createVisualShape(
-                    p.GEOM_BOX, 
-                    halfExtents=[0.15, 0.15, 0.9], 
-                    rgbaColor=[0.8, 0.2, 0.2, 1], 
-                    physicsClientId=self.CLIENT
-                )
-                
                 # 3. Crear los cuerpos estáticos en la simulación
                 for i, pos in enumerate(self.posBo):
+                    if self.randomized :
+                        ancho = np.random.uniform(.1,.4)
+                        largo = np.random.uniform(.1,.4)
+                        alto  = np.random.uniform(.4,1.2)
+                    else:
+                        ancho = 0.15
+                        largo = 0.15
+                        alto  = 1.8
+                    # 2. Crear las formas en PyBullet
+                    # halfExtents=[0.15, 0.15, 1.8] genera una columna de 30x30 cm x 3.6m de alto
+                    col_id = p.createCollisionShape(
+                        p.GEOM_BOX, 
+                        halfExtents=[ancho, largo, alto], 
+                        physicsClientId=self.CLIENT
+                    )
+                    vis_id = p.createVisualShape(
+                        p.GEOM_BOX, 
+                        halfExtents=[ancho, largo, alto], 
+                        rgbaColor=[0.8, 0.2, 0.2, 1], 
+                        physicsClientId=self.CLIENT
+                    )
                     self.cubo_id[i] = p.createMultiBody(
                         baseMass=0,  # <--- CRÍTICO: 0 lo hace estático (inamovible al chocar)
                         baseCollisionShapeIndex=col_id,
