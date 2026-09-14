@@ -302,7 +302,7 @@ class BaseAviary(gym.Env):
         p.resetDebugVisualizerCamera(
             cameraDistance=0.001,
             cameraYaw=yaw_deg - 90,
-            cameraPitch=pitch_deg,
+            cameraPitch=-pitch_deg,
             cameraTargetPosition=front_pos+np.array([0, 0, 0.05]),
             physicsClientId=self.CLIENT
         )
@@ -356,7 +356,7 @@ class BaseAviary(gym.Env):
             in each subclass for its format.
 
         """
-        self.update_fpv_gui_camera(0)
+        #self.update_fpv_gui_camera(0)
         #### Save PNG video frames if RECORD=True and GUI=False ####
         if self.RECORD and not self.GUI and self.step_counter%self.CAPTURE_FREQ == 0:
             [w, h, rgb, dep, seg] = p.getCameraImage(width=self.VID_WIDTH,
@@ -897,17 +897,25 @@ class BaseAviary(gym.Env):
             self.wind_force = self.wind_mean + noise
             
         elif self.wind_type == "gust":
-            # Ráfagas intermitentes de viento
             self.step_count += 1
-            if self.step_count % 400 == 0:  # Cada 200 steps, una ráfaga
-                gust_strength = np.random.uniform(0.002, 0.01)  # Fuerza de la ráfaga
+
+            # Ráfagas intermitentes
+            if self.step_count % 400 == 0:
+                gust_strength = np.random.uniform(0.002, 0.01)
                 gust_direction = np.random.uniform(-1, 1, 3)
-                gust_direction = gust_direction / np.linalg.norm(gust_direction)
+                gust_direction /= np.linalg.norm(gust_direction)
                 self.wind_force = gust_strength * gust_direction
-            elif self.step_count % 500 == 0:  # Terminar la ráfaga
+
+            elif self.step_count % 500 == 0:
                 self.wind_force = np.zeros(3)
-        #print(self.wind_force)
-        return self.wind_force
+
+            # Ruido de alta frecuencia muy débil
+            noise_strength = 0.0002
+            high_freq_noise = np.random.normal(0, noise_strength, 3)
+
+            wind = self.wind_force + high_freq_noise
+
+            return wind
     ################################################################################
     def _wind(self, wind_force):
         p.applyExternalForce(self.DRONE_IDS[0],

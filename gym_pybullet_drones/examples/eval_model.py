@@ -48,7 +48,7 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
             record=record_video,
             initial_rpys=np.array([[0, 0, 0]]),
             random_targets=False,
-            physics=Physics.PYB,
+            physics=Physics.PYB_WIND,
             pyb_freq=240,
             ctrl_freq=60,
             randomized=False

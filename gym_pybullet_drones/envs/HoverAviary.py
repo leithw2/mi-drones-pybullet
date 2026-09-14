@@ -257,7 +257,7 @@ class HoverAviary(BaseRLAviary):
         elif not self.one_only_target and not self.random_targets:
             # Lista de trayectorias benchmark disponibles
             # benchmarks = [lemniscata_8, lissajous_3d, spirograph_3d, helice_ascendente, waypoints_square]
-            benchmarks = [lemniscata_8, lemniscata_8_inv]
+            benchmarks = [lemniscata_8]
             
             # Selección aleatoria o manual del test (0: Lemniscata, 1: Lissajous, 2: Spirograph, 3: Hélice, 4: Cuadrado)
             self.task_idx = np.random.choice(len(benchmarks))

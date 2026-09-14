@@ -66,7 +66,7 @@ DEFAULT_OBS = ObservationType('kin') # 'kin' or 'rgb'
 DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
-physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
+physics=Physics.PYB_WIND # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
 CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'ToF_yawLocal09.02.2026_18.43.31')
 #CONTINUE_FROM = None # None or path to saved model folder
 RANDOM_TARGETS=False # True or False
@@ -176,10 +176,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if continue_from and os.path.isfile(os.path.join(filename, 'best_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'best_model.zip')}")
         model = PPO.load(os.path.join(filename, 'best_model.zip'), env=train_env, device=DEVICE,
-        ent_coef = 0.0001, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
-        target_kl= 0.01, # Aumentado para permitir más 
-        clip_range = 0.1, 
-        learning_rate = lambda p: 0.00001 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005)
+        ent_coef = 0.01, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
+        target_kl= 0.04, # Aumentado para permitir más 
+        clip_range = 0.2, 
+        learning_rate = lambda p: 0.0005)
         
         # model.clip_range = constant_fn(0.2)
         # El modelo ya contiene num_timesteps internamente

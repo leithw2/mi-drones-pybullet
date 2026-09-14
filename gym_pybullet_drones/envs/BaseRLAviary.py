@@ -134,22 +134,12 @@ class BaseRLAviary(BaseAviary):
                     posz = lambda : 0
                 
                 self.posBo = [
-                    [ 1.4 + posx(), -1.2 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-                    [ 6.4 + posx(),  1.4 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-                    [ 6.4 + posx(), -1.4 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared externa)
-                    #[-6.8 + posx(),  0.0 + posy(), 1.0 + posz()],  # Zona 3: Bloqueo Directo Curva Izquierda
-                    
-                    [-1.0 + posx(),  2.0 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-
-                    
-                    [ 2.3 + posx(),  2.3 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-                                        
-                    [-2.3 + posx(), -2.3 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-
-                    #[-2.0 + posx(),  1.4 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared interna)
-                    #[ 5.0 + posx(),  0.4 + posy(), 1.0 + posz()],  # Zona 2: Pasillo Curva Derecha (Pared externa)
-                    [-5.0 + posx(),  0.4 + posy(), 1.0 + posz()],  # Zona 3: Bloqueo Directo Curva Izquierda
-                    #[ 5.0 + posx(),  1.5 + posy(), 1.0 + posz()]   # Zona 3: Bloqueo Directo Curva Superior
+                    [ 2.3 + posx(),  2.3 + posy(), 1.0 + posz()],
+                    [ 6.4 + posx(), -1.4 + posy(), 1.0 + posz()],
+                    [ 1.4 + posx(), -1.2 + posy(), 1.0 + posz()],
+                    [-1.0 + posx(),  2.0 + posy(), 1.0 + posz()],
+                    [-5.0 + posx(),  0.4 + posy(), 1.0 + posz()],
+                    [-2.3 + posx(), -2.3 + posy(), 1.0 + posz()],
                 ]
                 
                 # Inicializar diccionario/lista de IDs si no existe
