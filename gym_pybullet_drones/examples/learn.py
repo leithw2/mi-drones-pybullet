@@ -152,7 +152,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
             train_env = make_vec_env(HoverAviary,
                                     env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized = True),
                                     n_envs=N_ENVS,
-                                    
+                                    seed=0
                                     )
             eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized=False)
             eval_env = Monitor(eval_env)
@@ -161,7 +161,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
             train_env = make_vec_env(MultiHoverAviary,
                                     env_kwargs=dict(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics,),
                                     n_envs=N_ENVS,
-                                    
+                                    seed=0
                                     )
             eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = Monitor(eval_env)
@@ -176,10 +176,10 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if continue_from and os.path.isfile(os.path.join(filename, 'best_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'best_model.zip')}")
         model = PPO.load(os.path.join(filename, 'best_model.zip'), env=train_env, device=DEVICE,
-        ent_coef = 0.01, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
-        target_kl= 0.04, # Aumentado para permitir más 
-        clip_range = 0.2, 
-        learning_rate = lambda p: 0.0005)
+        ent_coef = 0.001, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
+        target_kl= 0.02, # Aumentado para permitir más 
+        clip_range = 0.1, 
+        learning_rate = lambda p: 0.0001)
         
         # model.clip_range = constant_fn(0.2)
         # El modelo ya contiene num_timesteps internamente
@@ -259,7 +259,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         target_reward = 474.15 if not multiagent else 949.5
     else:
         
-        target_reward = 3500 if not multiagent else 920.
+        target_reward = 4500 if not multiagent else 920.
     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=target_reward, verbose=1)
     eval_callback = EvalCallback(
         eval_env,
