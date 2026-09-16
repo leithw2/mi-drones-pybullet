@@ -15,7 +15,7 @@ from gym_pybullet_drones.utils.enums import ObservationType, ActionType, Physics
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(SCRIPT_DIR, 'results')
 
-
+randomized = True  # Variable global para controlar la aleatoriedad
 class FixedSeedEvalWrapper(gym.Wrapper):
     def __init__(self, env, seeds=list(range(10))):
         super().__init__(env)
@@ -51,7 +51,7 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
             physics=Physics.PYB_WIND,
             pyb_freq=240,
             ctrl_freq=60,
-            randomized=False
+            randomized=randomized
         )
     else:
         test_env = MultiHoverAviary(
@@ -61,9 +61,10 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
             act=DEFAULT_ACT,
             record=record_video
         )
-    
+    if not randomized:
     # Envolver el entorno de evaluación con las semillas específicas
-    test_env = FixedSeedEvalWrapper(test_env, seeds=list(range(10)))
+        test_env = FixedSeedEvalWrapper(test_env, seeds=list(range(10)))
+    
 
     if gui:
         # Usar unwrapped para evitar la advertencia de Gymnasium

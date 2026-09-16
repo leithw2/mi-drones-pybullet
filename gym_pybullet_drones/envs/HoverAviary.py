@@ -222,7 +222,7 @@ class HoverAviary(BaseRLAviary):
         def waypoints_square(p):
             # Divide p [0, 1] en 4 segmentos rectos
             if p < 0.25:
-                t = p / 0.25
+                t = p / 0.5
                 return np.array([2.5 * t, 0.0, 1.0])
             elif p < 0.50:
                 t = (p - 0.25) / 0.25
@@ -257,7 +257,7 @@ class HoverAviary(BaseRLAviary):
         elif not self.one_only_target and not self.random_targets:
             # Lista de trayectorias benchmark disponibles
             # benchmarks = [lemniscata_8, lissajous_3d, spirograph_3d, helice_ascendente, waypoints_square]
-            benchmarks = [lemniscata_8]
+            benchmarks = [lemniscata_8, lemniscata_8_inv, lissajous_3d, spirograph_3d, helice_ascendente, waypoints_square]
             
             # Selección aleatoria o manual del test (0: Lemniscata, 1: Lissajous, 2: Spirograph, 3: Hélice, 4: Cuadrado)
             self.task_idx = np.random.choice(len(benchmarks))

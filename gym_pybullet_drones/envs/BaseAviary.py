@@ -928,36 +928,36 @@ class BaseAviary(gym.Env):
          
          
         # 2. Dibujar la flecha de visualización si el GUI está activo
-        if self.GUI:
-            # Obtenemos la posición actual del dron para el origen de la flecha
-            pos, quat = p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)
+        # if self.GUI:
+        #     # Obtenemos la posición actual del dron para el origen de la flecha
+        #     pos, quat = p.getBasePositionAndOrientation(self.DRONE_IDS[0], physicsClientId=self.CLIENT)
             
-            # Calculamos el punto final de la flecha en el mundo (World Frame)
-            # Como wind_force está en LINK_FRAME, lo rotamos para que coincida visualmente
-            wind_direction_global, _ = p.multiplyTransforms([0, 0, 0], quat, wind_force, [0, 0, 0, 1])
+        #     # Calculamos el punto final de la flecha en el mundo (World Frame)
+        #     # Como wind_force está en LINK_FRAME, lo rotamos para que coincida visualmente
+        #     wind_direction_global, _ = p.multiplyTransforms([0, 0, 0], quat, wind_force, [0, 0, 0, 1])
             
-            # Escalamos la flecha para que sea visible (ejemplo: multiplicar por 0.5 o 2 según la magnitud)
-            scale = 200 
-            arrow_end = [
-                pos[0] + wind_direction_global[0] * -scale,
-                pos[1] + wind_direction_global[1] * -scale,
-                pos[2] + wind_direction_global[2] * -scale
-            ]
+        #     # Escalamos la flecha para que sea visible (ejemplo: multiplicar por 0.5 o 2 según la magnitud)
+        #     scale = 200 
+        #     arrow_end = [
+        #         pos[0] + wind_direction_global[0] * -scale,
+        #         pos[1] + wind_direction_global[1] * -scale,
+        #         pos[2] + wind_direction_global[2] * -scale
+        #     ]
 
-            # Inicializar el ID de la línea si no existe en el __init__
-            if not hasattr(self, 'wind_line_id'):
-                self.wind_line_id = -1
+        #     # Inicializar el ID de la línea si no existe en el __init__
+        #     if not hasattr(self, 'wind_line_id'):
+        #         self.wind_line_id = -1
 
-            # Dibujamos o actualizamos la línea (color azul para el viento)
-            self.wind_line_id = p.addUserDebugLine(
-                pos, 
-                arrow_end, 
-                lineColorRGB=[0, 0, 1], 
-                lineWidth=2,
-                lifeTime=0, # 0 para que sea permanente hasta que se reemplace
-                replaceItemUniqueId=self.wind_line_id,
-                physicsClientId=self.CLIENT
-            )
+        #     # Dibujamos o actualizamos la línea (color azul para el viento)
+        #     self.wind_line_id = p.addUserDebugLine(
+        #         pos, 
+        #         arrow_end, 
+        #         lineColorRGB=[0, 0, 1], 
+        #         lineWidth=2,
+        #         lifeTime=0, # 0 para que sea permanente hasta que se reemplace
+        #         replaceItemUniqueId=self.wind_line_id,
+        #         physicsClientId=self.CLIENT
+        #     )
             
     def _groundEffect(self,
                       rpm,
