@@ -15,7 +15,7 @@ from gym_pybullet_drones.utils.enums import ObservationType, ActionType, Physics
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(SCRIPT_DIR, 'results')
 
-randomized = True  # Variable global para controlar la aleatoriedad
+randomized = False  # Variable global para controlar la aleatoriedad
 class FixedSeedEvalWrapper(gym.Wrapper):
     def __init__(self, env, seeds=list(range(10))):
         super().__init__(env)
@@ -34,8 +34,23 @@ class FixedSeedEvalWrapper(gym.Wrapper):
         self.idx += 1
         return self.env.reset(**kwargs)
 
+def control_simulation_speed(sim_speed, ctrl_freq):
+    """
+    Controla la velocidad de simulación.
 
-def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, output_folder='results', colab=False, episodes=30, max_steps=3000000):
+    sim_speed:
+        0    = máxima velocidad
+        1.0  = tiempo real
+        2.0  = 2x
+        0.5  = 0.5x
+    """
+
+    if sim_speed <= 0:
+        return 0.0
+
+    return 1.0 / (ctrl_freq * sim_speed)
+
+def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, output_folder='results', colab=False, episodes=30, max_steps=3000000, sim_speed = 1.0):
     DEFAULT_OBS = ObservationType('kin')
     DEFAULT_ACT = ActionType('rpm')
     DEFAULT_AGENTS = 1
@@ -48,7 +63,7 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
             record=record_video,
             initial_rpys=np.array([[0, 0, 0]]),
             random_targets=False,
-            physics=Physics.PYB_WIND,
+            physics=Physics.PYB,
             pyb_freq=240,
             ctrl_freq=60,
             randomized=randomized
@@ -66,10 +81,24 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
         test_env = FixedSeedEvalWrapper(test_env, seeds=list(range(10)))
     
 
+        # Control de velocidad de simulación
     if gui:
-        # Usar unwrapped para evitar la advertencia de Gymnasium
-        p.setRealTimeSimulation(0, physicsClientId=test_env.unwrapped.CLIENT)
-        
+        p.setRealTimeSimulation(
+            0,
+            physicsClientId=test_env.unwrapped.CLIENT
+        )
+
+    ctrl_freq = test_env.unwrapped.CTRL_FREQ
+
+    sim_timestep = control_simulation_speed(
+        sim_speed,
+        ctrl_freq
+    )
+
+    print(f"[INFO] Velocidad de simulación: {sim_speed}x")
+    print(f"[INFO] Control frequency: {ctrl_freq} Hz")
+    
+    
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = PPO.load(model_path, env=test_env, device=device, verbose=0)
 
@@ -81,11 +110,15 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
 
         # Usar unwrapped para EPISODE_LEN_SEC y CTRL_FREQ
         max_ep_steps = max_steps or (test_env.unwrapped.EPISODE_LEN_SEC * 300 * test_env.unwrapped.CTRL_FREQ)
-
+        
         for i in range(max_ep_steps):
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = test_env.step(action)
             total_reward += reward
+
+            # Control de velocidad
+            if sim_timestep > 0:
+                time.sleep(sim_timestep)
 
             if terminated or truncated:
                 break
@@ -97,7 +130,7 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones a máxima velocidad')
-    default_model_path = os.path.join(RESULTS_DIR, 'ToF_yawLocal09.02.2026_18.43.31', 'final_model')
+    default_model_path = os.path.join(RESULTS_DIR, 'ToF_yawLocal09.02.2026_18.43.31', 'best_model')
     
     parser.add_argument('--model_path', type=str, default=default_model_path, help='Ruta al modelo PPO')
     parser.add_argument('--multiagent', action='store_true', help='Usar MultiHoverAviary')
@@ -105,6 +138,6 @@ if __name__ == '__main__':
     parser.add_argument('--record_video', action='store_true', default=False, help='Grabar video')
     parser.add_argument('--episodes', default=90, type=int, help='Cantidad de episodios')
     parser.add_argument('--max_steps', default=None, type=int, help='Máximo de pasos por episodio')
-    
+    parser.add_argument('--sim_speed', default=1.0, type=float, help='Velocidad de simulación: 0=maxima, 1=tiempo real, 2=2x')
     args = parser.parse_args()
     evaluate_model(**vars(args))

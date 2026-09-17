@@ -137,7 +137,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         if not multiagent:
             train_env = HoverAviary(gui=gui, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, randomized = True)            
             # En la sección donde creas eval_env:
-            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized=False)
+            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized = False)
             eval_env = Monitor(eval_env)
             eval_env = FixedSeedEvalWrapper(eval_env, seeds=list(range(10))) # <-- AÑADIR ESTA LÍNEA
             
@@ -176,9 +176,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if continue_from and os.path.isfile(os.path.join(filename, 'best_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'best_model.zip')}")
         model = PPO.load(os.path.join(filename, 'best_model.zip'), env=train_env, device=DEVICE,
-        ent_coef = 0.001, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
-        target_kl= 0.02, # Aumentado para permitir más 
-        clip_range = 0.1, 
+        ent_coef = 0.01, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
+        target_kl= 0.06, # Aumentado para permitir más 
+        clip_range = 0.2, 
         learning_rate = lambda p: 0.0001)
         
         # model.clip_range = constant_fn(0.2)

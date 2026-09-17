@@ -186,21 +186,21 @@ class HoverAviary(BaseRLAviary):
         lemniscata_8 = lambda p: np.round(np.array([
             Amplitudx * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
             Amplitudy * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
-            1.2 + 0.4 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
+            1.6 + 0.4 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
         ]), 2)
         
         # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
         lemniscata_8_inv = lambda p: np.round(np.array([
             -Amplitudx * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
             -Amplitudy * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
-            1.2 + 0.4 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
+            1.6 + 0.4 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
         ]), 2)
 
         # 2. Curva de Lissajous 3D (Acoplamiento triaxial complejo)
         lissajous_3d = lambda p: np.round(np.array([
             4.0 * math.sin(3 * 2 * math.pi * p),              # X: Frecuencia fx = 3
             4.0 * math.cos(2 * 2 * math.pi * p),              # Y: Frecuencia fy = 2
-            1.8 + 0.5 * math.sin(4 * 2 * math.pi * p)         # Z: Frecuencia fz = 4
+            2.2 + 0.5 * math.sin(4 * 2 * math.pi * p)         # Z: Frecuencia fz = 4
         ]), 2)
 
         # 3. Espirograma 3D / Epitrocoide (Cambios rápidos de curvatura y $g$-forces)
@@ -208,14 +208,14 @@ class HoverAviary(BaseRLAviary):
         spirograph_3d = lambda p: np.round(np.array([
             (R_out - r_in) * math.cos(2 * math.pi * p) + d_val * math.cos((R_out - r_in) / r_in * 2 * math.pi * p),
             (R_out - r_in) * math.sin(2 * math.pi * p) - d_val * math.sin((R_out - r_in) / r_in * 2 * math.pi * p),
-            2.0 + 0.4 * math.sin(6 * math.pi * p)
+            2.5 + 0.4 * math.sin(6 * math.pi * p)
         ]), 2)
 
         # 4. Hélice Ascendente Determinista (Radio y paso constantes)
         helice_ascendente = lambda p: np.round(np.array([
             2.5 * math.cos(4 * math.pi * p),                  # X: Radio 1.5m, 2 vueltas completas
             2.5 * math.sin(4 * math.pi * p),                  # Y
-            0.5 + 1.5 * p                                     # Z: Ascenso continuo de 0.5m a 2.0m
+            1.5 + 1.5 * p                                     # Z: Ascenso continuo de 0.5m a 2.0m
         ]), 2)
 
         # 5. Respuesta a Escalón Poligonal (Waypoints tipo Cuadrado Zig-Zag)
@@ -223,16 +223,16 @@ class HoverAviary(BaseRLAviary):
             # Divide p [0, 1] en 4 segmentos rectos
             if p < 0.25:
                 t = p / 0.5
-                return np.array([2.5 * t, 0.0, 1.0])
+                return np.array([2.5 * t, 0.0, 1.5])
             elif p < 0.50:
                 t = (p - 0.25) / 0.25
-                return np.array([2.5, 2.5 * t, 1.0])
+                return np.array([2.5, 2.5 * t, 1.2])
             elif p < 0.75:
                 t = (p - 0.50) / 0.25
                 return np.array([2.5 * (1 - t), 2.5, 1.0])
             else:
                 t = (p - 0.75) / 0.25
-                return np.array([0.0, 2.5 * (1 - t), 1.0])
+                return np.array([0.0, 2.5 * (1 - t), 1.5])
 
         # -------------------------------------------------------------------------
         
@@ -257,7 +257,7 @@ class HoverAviary(BaseRLAviary):
         elif not self.one_only_target and not self.random_targets:
             # Lista de trayectorias benchmark disponibles
             # benchmarks = [lemniscata_8, lissajous_3d, spirograph_3d, helice_ascendente, waypoints_square]
-            benchmarks = [lemniscata_8, lemniscata_8_inv, lissajous_3d, spirograph_3d, helice_ascendente, waypoints_square]
+            benchmarks = [helice_ascendente]
             
             # Selección aleatoria o manual del test (0: Lemniscata, 1: Lissajous, 2: Spirograph, 3: Hélice, 4: Cuadrado)
             self.task_idx = np.random.choice(len(benchmarks))
@@ -361,7 +361,7 @@ class HoverAviary(BaseRLAviary):
 
         if self.prev_action is not None:
             action_change = self.action - self.prev_action
-            action_smooth_penalty = -0.20 * np.sum(np.square(action_change))
+            action_smooth_penalty = -0.050 * np.sum(np.square(action_change))
 
         self.prev_action = self.action.copy()
 
@@ -376,8 +376,10 @@ class HoverAviary(BaseRLAviary):
         
 
         # 4. Estabilización de Actitud y Velocidades Angulares
-        angle_penalty = -0.005 * (abs(angles[0]) + abs(angles[1]))
-        angle_vel_penalty = -0.01 * np.sum(np.square(angle_vel)) # Penaliza oscilaciones cuadráticas (temblor)
+        # angle_penalty = -0.005 * (abs(angles[0]) + abs(angles[1]))
+        angle_penalty = -0.0
+        # angle_vel_penalty = -0.01 * np.sum(np.square(angle_vel)) # Penaliza oscilaciones cuadráticas (temblor)
+        angle_vel_penalty = -0.0
 
         # 5. Penalización de Tiempo Normalizada
         self.time_penalty = - 0.1
@@ -660,38 +662,14 @@ class HoverAviary(BaseRLAviary):
 
         self.actual_reward += total_reward
         
-        # if total_reward < -2.0:
-
-        # print(
-        #     f"""
-        #     REWARD STEP NEGATIVO
-        #     total       = {total_reward:.3f}
-            
-        #     obs_speed   = {obstacle_speed_penalty:.3f}
-        #     lidar       = {penaltyLidar:.3f}
-        #     velocity_toward_target_reward = {velocity_toward_target_reward:.3f}
-        #     speed       = {speed:.3f}
-        #     risk        = {obstacle_risk:.3f}
-        #     distance    = {dist:.3f}
-        #     base        = {base_reward:.3f}
-        #     progress    = {progress_reward:.3f}
-        #     heading     = {heading_alignment_reward:.3f}
-        #     angle       = {angle_penalty:.3f}
-        #     angle_vel   = {angle_vel_penalty:.3f}
-        #     smooth      = {action_smooth_penalty:.3f}
-        #     """
-        #         )
-        
-        # if dist < 0.8:
-        #     print(
-        #         f"dist={dist:.3f} "
-        #         f"speed={speed:.3f} "
-        #         f"radial_v={radial_velocity:.3f} "
-        #         f"base={base_reward:.3f} "
-        #         f"progress={progress_reward:.3f} "
-        #         f"heading={heading_alignment_reward:.3f} "
-        #         f"bonus={bonus:.3f}"
-        #     )
+        print(
+        f"dist={dist:.3f} | "
+        f"delta_z={delta_pos[2]:.3f} | "
+        f"vz={vel[2]:.3f} | "
+        f"radial_v={radial_velocity:.3f} | "
+        f"progress={progress_reward:.3f} | "
+        f"action_penalty={action_smooth_penalty:.3f}"
+    )
         return total_reward
         
     import math

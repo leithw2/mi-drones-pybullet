@@ -71,6 +71,7 @@ class BaseRLAviary(BaseAviary):
         self.LIDAR_BUFFER_SIZE = int(2) # buffer of the last n lidar readings, to be added to the observation space for non-Markovian formulations of the problem and to help with obstacle avoidance in vision-based tasks
         self.action_buffer = deque(maxlen=self.ACTION_BUFFER_SIZE)
         self.lidar_buffer = deque(maxlen=self.LIDAR_BUFFER_SIZE)
+        self.action = np.zeros(4)
         ####
         # Initialize TARGET_POS to avoid attribute errors
         self.TARGET_POS = np.zeros(3) if num_drones == 1 else np.zeros((num_drones, 3))
@@ -316,9 +317,8 @@ class BaseRLAviary(BaseAviary):
         """
         self.action_buffer.append(action)
         
-        self.action = action.copy()   # ← AÑADE ESTA LÍNEA
+        self.action = action.copy()
 
-        rpm = np.zeros((self.NUM_DRONES,4))
 
         self.prev_action = action.copy()
         rpm = np.zeros((self.NUM_DRONES,4))
@@ -567,7 +567,14 @@ class BaseRLAviary(BaseAviary):
                     pqr_local          # 3
                 ]).reshape(14,)
                 
-                # print(f"obs_14[{i}]: {obs_14[i, :]}")
+                print(
+                    f"target_dir_global={u_unit_global} | "
+                    f"u_local={u_unit_local} | "
+                    f"vel_global={current_v_global} | "
+                    f"vel_local={current_v_local} | "
+                    f"action={self.action}"
+                )
+
 
             self.lidar_buffer.append(self.lidar.copy())
             
