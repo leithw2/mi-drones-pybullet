@@ -15,7 +15,7 @@ from gym_pybullet_drones.utils.enums import ObservationType, ActionType, Physics
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(SCRIPT_DIR, 'results')
 
-randomized = False  # Variable global para controlar la aleatoriedad
+randomized = True  # Variable global para controlar la aleatoriedad
 class FixedSeedEvalWrapper(gym.Wrapper):
     def __init__(self, env, seeds=list(range(10))):
         super().__init__(env)
@@ -130,7 +130,7 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones a máxima velocidad')
-    default_model_path = os.path.join(RESULTS_DIR, 'ToF_yawLocal09.02.2026_18.43.31', 'best_model')
+    default_model_path = os.path.join(RESULTS_DIR, 'ToF_yawLocal09.20.2026_10.01.22', 'best_model')
     
     parser.add_argument('--model_path', type=str, default=default_model_path, help='Ruta al modelo PPO')
     parser.add_argument('--multiagent', action='store_true', help='Usar MultiHoverAviary')

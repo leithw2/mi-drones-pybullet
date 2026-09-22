@@ -10,7 +10,7 @@ class HoverAviary(BaseRLAviary):
     
     def __init__(self,
                  drone_model: DroneModel=DroneModel.CF2X,
-                 initial_xyzs=np.array([[0, 0, 1]]),
+                 initial_xyzs=np.array([[0, 0, np.random.uniform(0.8, 2.5)]]),
                  initial_rpys=None,
                  physics: Physics=Physics.PYB,
                  pyb_freq: int = 240,
@@ -67,7 +67,7 @@ class HoverAviary(BaseRLAviary):
         self.random_value = 1.6
         self.randomized = randomized
         
-        if randomized:
+        if self.randomized :
             initial_xyzs = np.array([[np.random.uniform(-0.8, 0.8),np.random.uniform(-0.8, 0.8), np.random.uniform(0.8, 1.5)]])
 
             
@@ -103,6 +103,7 @@ class HoverAviary(BaseRLAviary):
             plt.show(block=False)
             
         self.prev_action = None
+        self.lidar_risk_memory = 0.0
 
         # Fase inicial: vuelo conservador
         self.max_action_delta = 0.05
@@ -154,13 +155,15 @@ class HoverAviary(BaseRLAviary):
         self.score = 1
         self.time_penalty = 0
         self.prev_action = None
-        
-        
-        
+        self._probe_id = None
+        self._probe_shape = None
+        if self.randomized :
+            self.INIT_XYZS = np.array([[np.random.uniform(-0.8, 0.8),np.random.uniform(-0.8, 0.8), np.random.uniform(0.8, 1.5)]])
+
         # Habilitar orientación inicial aleatoria en Yaw
         if self.INIT_RPYS is not None :
             self.INIT_RPYS[0, 2] = np.random.uniform(-np.pi, np.pi)
-            # self.INIT_RPYS[0, 2] = np.random.uniform(0,0)
+            #self.INIT_RPYS[0, 2] = np.random.uniform(0,0)
             
 
         obs, info = super().reset(*args, **kwargs)
@@ -186,36 +189,38 @@ class HoverAviary(BaseRLAviary):
         lemniscata_8 = lambda p: np.round(np.array([
             Amplitudx * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
             Amplitudy * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
-            1.6 + 0.4 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
+            1.6 + 0.8 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
         ]), 2)
         
         # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
         lemniscata_8_inv = lambda p: np.round(np.array([
             -Amplitudx * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
             -Amplitudy * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
-            1.6 + 0.4 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
+            1.6 + 0.8 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
         ]), 2)
 
         # 2. Curva de Lissajous 3D (Acoplamiento triaxial complejo)
         lissajous_3d = lambda p: np.round(np.array([
-            4.0 * math.sin(3 * 2 * math.pi * p),              # X: Frecuencia fx = 3
-            4.0 * math.cos(2 * 2 * math.pi * p),              # Y: Frecuencia fy = 2
-            2.2 + 0.5 * math.sin(4 * 2 * math.pi * p)         # Z: Frecuencia fz = 4
+            4.0 * math.sin(6 * 2 * math.pi * p),              # X: Frecuencia fx = 3
+            4.0 * math.cos(4 * 2 * math.pi * p),              # Y: Frecuencia fy = 2
+            2.2 + 0.9 * math.sin(4 * 2 * math.pi * p)         # Z: Frecuencia fz = 4
         ]), 2)
 
-        # 3. Espirograma 3D / Epitrocoide (Cambios rápidos de curvatura y $g$-forces)
-        R_out, r_in, d_val = 4.0, 2.5, 0.7
+        # 3. Espirograma 3D / Epitrocoide de recorrido amplio y mayor frecuencia.
+        # El radio efectivo aumenta y la curva completa dos ciclos principales.
+        R_out, r_in, d_val = 6.0, 1.0, 3.0
+        spiro_frequency = 1.0
         spirograph_3d = lambda p: np.round(np.array([
-            (R_out - r_in) * math.cos(2 * math.pi * p) + d_val * math.cos((R_out - r_in) / r_in * 2 * math.pi * p),
-            (R_out - r_in) * math.sin(2 * math.pi * p) - d_val * math.sin((R_out - r_in) / r_in * 2 * math.pi * p),
-            2.5 + 0.4 * math.sin(6 * math.pi * p)
+            (R_out - r_in) * math.cos(spiro_frequency * 2 * math.pi * p) + d_val * math.cos((R_out - r_in) / r_in * spiro_frequency * 2 * math.pi * p),
+            (R_out - r_in) * math.sin(spiro_frequency * 2 * math.pi * p) - d_val * math.sin((R_out - r_in) / r_in * spiro_frequency * 2 * math.pi * p),
+            2.5 + 0.8 * math.sin(6 * math.pi * p)
         ]), 2)
 
         # 4. Hélice Ascendente Determinista (Radio y paso constantes)
         helice_ascendente = lambda p: np.round(np.array([
-            2.5 * math.cos(4 * math.pi * p),                  # X: Radio 1.5m, 2 vueltas completas
-            2.5 * math.sin(4 * math.pi * p),                  # Y
-            1.5 + 1.5 * p                                     # Z: Ascenso continuo de 0.5m a 2.0m
+            3.5 * math.cos(8 * math.pi * p),                  # X: Radio 1.5m, 2 vueltas completas
+            3.5 * math.sin(8 * math.pi * p),                  # Y
+            1.5 + 2.5 * p                                     # Z: Ascenso continuo de 0.5m a 2.0m
         ]), 2)
 
         # 5. Respuesta a Escalón Poligonal (Waypoints tipo Cuadrado Zig-Zag)
@@ -233,6 +238,27 @@ class HoverAviary(BaseRLAviary):
             else:
                 t = (p - 0.75) / 0.25
                 return np.array([0.0, 2.5 * (1 - t), 1.5])
+
+        map_route = np.array([
+            [0.0, 1.0, 1.2],
+
+            [0.0, 12.0, 1.8],
+            [0.0, 14.0, 1.2],
+            [2.0, 16.0, 1.8],
+            [6.0, 16.0, 1.8],
+            [4.0, 20.0, 1.8],
+            [4.0, 20.0, 1.8],
+            [0.0, 26.0, 1.8],
+            [10.0, 27.0, 1.8],
+
+        ])
+
+        def map_waypoint_route(p):
+            num_segments = len(map_route) - 1
+            segment_length = 1.0 / num_segments
+            segment_index = min(int(p / segment_length), num_segments - 1)
+            t = (p - segment_index * segment_length) / segment_length
+            return (1 - t) * map_route[segment_index] + t * map_route[segment_index + 1]
 
         # -------------------------------------------------------------------------
         
@@ -256,23 +282,27 @@ class HoverAviary(BaseRLAviary):
 
         elif not self.one_only_target and not self.random_targets:
             # Lista de trayectorias benchmark disponibles
-            # benchmarks = [lemniscata_8, lissajous_3d, spirograph_3d, helice_ascendente, waypoints_square]
-            benchmarks = [helice_ascendente]
+            benchmarks = [lemniscata_8, lemniscata_8_inv, lissajous_3d, spirograph_3d, helice_ascendente]
+            benchmark_names = ["Lemniscata 8", "Lemniscata 8 Invertida", "Lissajous 3D", "Spirograph 3D", "Helice ascendente", "Mapa por waypoints"]
+            #benchmarks = [map_waypoint_route]
+            # benchmark_names = ["Spirograph 3D", "Helice ascendente"]
             
             # Selección aleatoria o manual del test (0: Lemniscata, 1: Lissajous, 2: Spirograph, 3: Hélice, 4: Cuadrado)
             self.task_idx = np.random.choice(len(benchmarks))
+            print("Benchmark seleccionado: ", benchmark_names[self.task_idx])
             
             # print("Direction ", self.task_idx )
-            # Discretización razonable para dinámicas de quadcopter (entre 60 y 100 pasos por trayecto)
+            # Menos puntos para que los waypoints consecutivos queden más separados.
             if self.randomized:
-                self.pasos = np.random.randint(40, 60)
+                self.pasos = np.random.randint(50,60)
             else : 
-                self.pasos = 40
+                self.pasos = 50
             
             self.point_track = self.generar_trayectoria(
                                                         benchmarks[self.task_idx],
                                                         pasos=self.pasos
                                                         )
+            self.pasos = len(self.point_track)
 
             # print(self.point_track)
             # Dibujar TODA la trayectoria
@@ -293,33 +323,58 @@ class HoverAviary(BaseRLAviary):
         self._prev_dist = None
         self.truncate_early = False
         self.prev_action = None
+        self.lidar_risk_memory = 0.0
 
         
         return self._computeObs(), info
 
     ################################################################################
     
-    def _is_space_clear(self, pos, radius=0.4, ignore_ids=[]):
-        # 1. Límites del área de vuelo
-        #if pos[0] < -1 or pos[1] < -1:
-        #    return False
-        
-        # --- NUEVO: Chequeo de Volumen (Detecta si está ADENTRO de un sólido) ---
-        # Creamos una caja pequeña alrededor del punto
-        aabb_min = [pos[0] - 0.05, pos[1] - 0.05, pos[2] - 0.05]
-        aabb_max = [pos[0] + 0.05, pos[1] + 0.05, pos[2] + 0.05]
-        overlapping = p.getOverlappingObjects(aabb_min, aabb_max, physicsClientId=self.CLIENT)
-        
-        if overlapping:
-            for obj in overlapping:
-                obj_id = obj[0]
-                # Ignoramos suelo (generalmente ID 0), el dron y los IDs en ignore_ids
-                if obj_id != 0 and obj_id not in self.DRONE_IDS and obj_id not in ignore_ids:
-                    # Si hay algo aquí, el punto está ADENTRO de un sólido
-                    return False
-        # -----------------------------------------------------------------------
+    def _is_space_clear(self, pos, radius=0.2, ignore_ids=[]):
+        if getattr(self, "_probe_id", None) is None:
+            self._probe_shape = p.createCollisionShape(
+                p.GEOM_SPHERE,
+                radius=radius,
+                physicsClientId=self.CLIENT
+            )
+            self._probe_id = p.createMultiBody(
+                baseMass=0,
+                baseCollisionShapeIndex=self._probe_shape,
+                basePosition=[0, 0, -100],
+                physicsClientId=self.CLIENT
+            )
 
-        # 2. Chequeo de Rayos (Detecta si hay paredes CERCA)
+        p.resetBasePositionAndOrientation(
+            self._probe_id,
+            np.asarray(pos, dtype=float),
+            [0, 0, 0, 1],
+            physicsClientId=self.CLIENT
+        )
+
+        obstacle_ids = []
+        if getattr(self, "map_id", None) is not None:
+            obstacle_ids.append(self.map_id)
+        obstacle_ids.extend(
+            obstacle_id for obstacle_id in getattr(self, "cubo_id", [])
+            if obstacle_id is not None
+        )
+        obstacle_ids.extend(
+            obstacle_id for obstacle_id in getattr(self, "dona_ids", [])
+            if obstacle_id is not None
+        )
+        obstacle_ids = [obstacle_id for obstacle_id in obstacle_ids if obstacle_id not in ignore_ids]
+
+        # Detecta puntos dentro de paredes y puntos demasiado cercanos a ellas.
+        for obstacle_id in obstacle_ids:
+            if p.getClosestPoints(
+                bodyA=self._probe_id,
+                bodyB=int(obstacle_id),
+                distance=0.0,
+                physicsClientId=self.CLIENT
+            ):
+                return False
+
+        # Margen adicional para mallas cóncavas o paredes delgadas.
         directions = [
             [radius, 0, 0], [-radius, 0, 0],
             [0, radius, 0], [0, -radius, 0],
@@ -340,336 +395,163 @@ class HoverAviary(BaseRLAviary):
                 
         return True
     
+    @staticmethod
+    def _smooth_lidar_map(lidar_map):
+        """Aplica un kernel 3x3 para suavizar la lectura 8x8 del LiDAR."""
+        lidar_map = np.asarray(lidar_map, dtype=float).reshape(8, 8)
+        kernel = np.array([[1, 2, 1],
+                           [2, 4, 2],
+                           [1, 2, 1]], dtype=float) / 16.0
+        padded = np.pad(lidar_map, ((1, 1), (1, 1)), mode="edge")
+        smoothed = np.zeros_like(lidar_map, dtype=float)
+        for i in range(8):
+            for j in range(8):
+                smoothed[i, j] = float(np.sum(padded[i:i + 3, j:j + 3] * kernel))
+        return smoothed
+
+    def _get_obstacle_guidance(self, vel_local):
+        """Return persistent obstacle risk and the safer lateral direction."""
+        if self.lidar is None:
+            return 0.0, 0.0
+
+        current_lidar = np.asarray(self.lidar[0, :64], dtype=float).reshape(8, 8)
+        current_lidar = self._smooth_lidar_map(current_lidar)
+        closest_risk = float(np.max(current_lidar))
+        strongest_rays = np.partition(current_lidar.reshape(-1), -8)[-8:]
+        obstacle_risk = float(np.clip(
+            0.7 * closest_risk + 0.3 * np.mean(strongest_rays), 0.0, 1.0
+        ))
+
+        # Columns are ordered from right to left in the drone body frame.
+        left_risk = float(np.mean(current_lidar[:, :3]))
+        right_risk = float(np.mean(current_lidar[:, 5:]))
+        safer_side = float(np.sign((1.0 - right_risk) - (1.0 - left_risk)))
+
+        self.lidar_risk_memory = max(
+            obstacle_risk,
+            0.92 * self.lidar_risk_memory
+        )
+        return self.lidar_risk_memory, safer_side
+
     def _computeReward(self):
-        """Calcula el valor de la recompensa actual acotada y estable."""
+        """Reward mínimo, local y orientado a seguir la trayectoria."""
+
         self.truncate_early = False
+
         state = self._getDroneStateVector(0)
         pos = state[0:3]
-        vel = state[10:13]          # vx, vy, vz
-        angles = state[7:10]        # roll, pitch, yaw
-        angle_vel = state[13:16]    # roll_rate, pitch_rate, yaw_rate
-        
+        vel_global = state[10:13]
+        ang_vel_global = state[13:16]
+        quat = state[3:7]
+        angles = state[7:10]
+
+        rotation_matrix = np.asarray(
+            p.getMatrixFromQuaternion(quat)
+        ).reshape(3, 3)
+
+        vel = rotation_matrix.T @ vel_global
+        ang_vel = rotation_matrix.T @ ang_vel_global
+        roll, pitch = angles[0], angles[1]
+
         delta_pos = self.TARGET_POS - pos
-        dist = np.linalg.norm(delta_pos)
-        
-        
+        dist = float(np.linalg.norm(delta_pos))
 
         if self._prev_dist is None:
             self._prev_dist = dist
-            
-        action_smooth_penalty = 0.0
 
-        if self.prev_action is not None:
-            action_change = self.action - self.prev_action
-            action_smooth_penalty = -0.050 * np.sum(np.square(action_change))
-
-        self.prev_action = self.action.copy()
-
-        # 1. Recompensa Continua por Cercanía (Sintronizada)
-        base_reward = np.exp(-1.5 * dist)  # Rango [0.0, 1.0] suave en lugar de cuadrático
-        
-        # 2. Recompensa de Progreso Continuo (Potencial)
-        # Premia reducir la distancia real en vez de usar valores discretos (-2.0 / +1.5)
-        progress_reward = 2.0 * (self._prev_dist - dist)
+        progress = self._prev_dist - dist
         self._prev_dist = dist
 
-        
+        target_dir = delta_pos / (dist + 1e-8)
+        target_local = rotation_matrix.T @ target_dir
 
-        # 4. Estabilización de Actitud y Velocidades Angulares
-        # angle_penalty = -0.005 * (abs(angles[0]) + abs(angles[1]))
-        angle_penalty = -0.0
-        # angle_vel_penalty = -0.01 * np.sum(np.square(angle_vel)) # Penaliza oscilaciones cuadráticas (temblor)
-        angle_vel_penalty = -0.0
+        target_xy = target_local[:2]
+        target_xy_norm = np.linalg.norm(target_xy)
+        heading_alignment = 1.0
+        if target_xy_norm > 1e-8:
+            target_xy = target_xy / target_xy_norm
+            heading_alignment = float(np.dot(np.array([1.0, 0.0]), target_xy))
+        heading_alignment = float(np.clip(heading_alignment, -1.0, 1.0))
 
-        # 5. Penalización de Tiempo Normalizada
-        self.time_penalty = - 0.1
+        forward_progress = float(np.dot(vel[:2], target_xy))
+        forward_speed = float(max(vel[0], 0.0))
 
-        # 6. Evaluación de Cumplimiento de Objetivo y Cambio de Target
-        bonus = 0.0
-        # Guardas la lectura actual antes de actualizarla con la nueva
-        # ============================================================
-        # LIDAR
-        # self.lidar = [d0_0 ... d0_63, d1_0 ... d1_63]
-        # ============================================================
-        lidar = self.lidar.flatten()
-        # Separar d0 y d1
-        self.lidar_d0 = lidar[0:64]
-        self.lidar_d1 = lidar[64:128]
-        
-        
-        # print("self.lidar shape:", self.lidar.shape)
-        # print("self.lidar_d0 shape:", self.lidar_d0.shape)
-        # print("self.lidar_d1 shape:", self.lidar_d1.shape)
-        # ============================================================
-        # VISUALIZACIÓN 8x8
-        # ============================================================
+        obstacle_risk, safer_side = self._get_obstacle_guidance(vel)
+        collision_penalty = -2.5 * obstacle_risk
+        if obstacle_risk > 0.35:
+            collision_penalty -= 4.0 * (obstacle_risk - 0.35) / 0.65
+        if obstacle_risk > 0.75:
+            collision_penalty -= 4.0 * (obstacle_risk - 0.75) / 0.25
+        collision_penalty = float(np.clip(collision_penalty, -10.0, 0.0))
 
-        
-        if self.GUI:
-            grid = self.lidar_d0.reshape(8, 8)
-            
-            self.heatmap.set_data(grid)
-            self.fig.canvas.draw_idle()
-            self.fig.canvas.flush_events()
+        # Near an obstacle, forward speed is dangerous. The useful action is to
+        # slow down and move toward the side with the clearer LiDAR sector.
+        braking_penalty = -3.0 * obstacle_risk * max(forward_speed - 0.35, 0.0)
+        safe_lateral_speed = safer_side * vel[1]
+        avoidance_reward = 2.5 * obstacle_risk * np.clip(safe_lateral_speed, 0.0, 1.0)
+        wrong_side_penalty = -1.5 * obstacle_risk * np.clip(-safe_lateral_speed, 0.0, 1.0)
 
-        # ============================================================
-        # PENALIZACIÓN Y LIDAR (Inicialización segura)
-        # ============================================================
-   
-        penaltyLidar = 0.0
-        penalty_dist = 0.0
-        penalty_approach = 0.0
-        evasion_reward = 0.0
-        blind_turn_penalty = 0.0
-        d0_smooth = None
-        max_d0_smooth = 0.0
-
-        if self.lidar_d0 is not None and self.lidar_d1 is not None:
-
-            d0_t0 = self.lidar_d0.reshape(8, 8)
-            d1_t1 = self.lidar_d1.reshape(8, 8)
-            
-            max_d0 = float(np.max(d0_t0))
-            max_d1 = float(np.max(d1_t1))
-            padded_d0 = np.pad(d0_t0, 1, mode='edge')
-            d0_smooth = np.zeros_like(d0_t0)
-            max_d0_smooth = float(np.max(d0_smooth))
-            for i in range(8):
-                        for j in range(8):
-                            d0_smooth[i, j] = np.mean(
-                                padded_d0[i:i+3, j:j+3]
-                            )
-                            
-            padded_d1 = np.pad(d1_t1, 1, mode='edge')
-            d1_smooth = np.zeros_like(d1_t1)
-
-            for i in range(8):
-                for j in range(8):
-                    d1_smooth[i, j] = np.mean(
-                        padded_d1[i:i+3, j:j+3]
-                    )
-
-            max_d1_smooth = float(np.max(d1_smooth))
-            threshold = 0.50
-
-            # 1. RIESGO POR PROXIMIDAD ESTÁTICA
-            if max_d0_smooth > threshold:
-                risk = (max_d0_smooth - threshold) / (1.0 - threshold)
-                penalty_dist = -2.0 * (risk ** 2)
-
-            # 2. RIESGO POR APROXIMACIÓN
-            delta = d0_t0 - d1_t1
-            padded = np.pad(delta, 1, mode='edge')
-            delta_smooth = np.zeros_like(delta)
-            
-            for i in range(8):
-                for j in range(8):
-                    delta_smooth[i, j] = np.mean(padded[i:i+3, j:j+3])
-
-
-            
-            max_delta = float(np.max(delta_smooth))
-            min_delta = float(np.min(delta_smooth))
-
-            if max_delta > 0.15:
-                penalty_approach = -0.4 * max_delta
-
-            # 3. EVASIÓN VS GIRO CIEGO
-            if max_d0_smooth > threshold or max_d1_smooth > threshold:
-                if min_delta < -0.1:
-                    rot_speed = np.sum(np.abs(angle_vel))
-                    
-                    if rot_speed > 1.1 and min_delta < -0.25:
-                        blind_turn_penalty = -2.5
-                    elif rot_speed <= 1.1:
-                        evasion_reward = 1.2 * abs(min_delta)
-
-            # PENALIZACIÓN TOTAL LiDAR
-            penaltyLidar = float(
-                np.clip(
-                    penalty_dist + penalty_approach + blind_turn_penalty + evasion_reward,
-                    -4.0,
-                    1.5
-                )
-            )
-
-
-        # ============================================================
-        # VELOCIDAD CERCA DE OBSTÁCULOS
-        # ============================================================
-
-        speed = np.linalg.norm(vel)
-        
-
-        
-
-        obstacle_threshold = 0.15
-
-        obstacle_risk = np.clip(
-            (max_d0_smooth - obstacle_threshold) /
-            (1.0 - obstacle_threshold),
-            0.0,
-            1.0
+        # Evitamos actitud excesiva y giros bruscos.
+        attitude_penalty = -0.5 * (
+            max(abs(roll) - np.deg2rad(20.0), 0.0)
+            + max(abs(pitch) - np.deg2rad(20.0), 0.0)
         )
+        yaw_penalty = -0.08 * abs(ang_vel[2])
 
-        safe_speed = 0.5
+        # La tarea principal es tocar los waypoints. Si el dron no se acerca al
+        # objetivo, debe perder recompensa; la supervivencia no debe pagar más que
+        # el progreso real hacia el waypoint actual.
+        base_reward = 0.0
+        approach_reward = 6.0 * max(progress, 0.0) * (1.0 - 0.65 * obstacle_risk)
+        no_approach_penalty = 0.0
+        if progress <= 0.0 and dist > 0.8:
+            no_approach_penalty -= 2.5 * (1.0 + min(dist, 8.0) / 8.0)
+        if forward_progress < 0.05 and dist > 1.0:
+            no_approach_penalty -= 1.5
+        if heading_alignment < 0.25 and dist > 1.0:
+            no_approach_penalty -= 0.8
 
-        obstacle_speed_penalty = (
-            -2.0
-            * obstacle_risk
-            * (speed / safe_speed) ** 2
-        )
+        heading_reward = 1.5 * max(heading_alignment, 0.0) * max(0.0, 1.0 - dist / 8.0)
+        speed_reward = 0.5 * max(forward_progress, 0.0) * max(0.0, 1.0 - dist / 6.0)
+        reverse_penalty = -0.8 * min(forward_progress, 0.0)
+        time_penalty = -0.02
 
-        obstacle_speed_penalty = float(
-            np.clip(
-                obstacle_speed_penalty,
-                -4.0,
-                0.0
-            )
-        )
-        # print("speed ", speed)
-        # print("obstacle_risk ", obstacle_risk)
-        # print("obstacle_speed_penalty ", obstacle_speed_penalty)
-        # print("penaltyLidar ", penaltyLidar)
-
-        # 3. Alineación de Yaw (Normalizada)
-        quat = state[3:7].copy()
-        if quat[3] < 0:
-            quat = -quat
-            
-        heading_alignment_reward = 0.0
-        radial_velocity = 0.0
-        velocity_toward_target_reward = 0.0
-
-        if dist > 0.15:
-
-            target_dir = delta_pos / (dist + 1e-8)
-
-            # Positivo  -> se acerca al objetivo
-            # Cero      -> movimiento tangencial
-            # Negativo  -> se aleja
-            radial_velocity = np.dot(vel, target_dir)
-
-            # Recompensamos únicamente el movimiento hacia el objetivo.
-            # El progress_reward ya penaliza alejarse.
-            velocity_toward_target_reward = (
-                0.3
-                * max(radial_velocity, 0.0)
-                * (1.0 - obstacle_risk)
-            )
-        delta_xy = delta_pos[:2]
-        dist_xy = np.linalg.norm(delta_xy)
-
-        if dist_xy > 0.15:
-
-            target_dir_xy = delta_xy / dist_xy
-
-            rotation_matrix = np.asarray(
-                p.getMatrixFromQuaternion(quat)
-            ).reshape(3, 3)
-
-            forward_xy = rotation_matrix[:2, 0]
-
-            forward_norm = np.linalg.norm(forward_xy)
-
-            if forward_norm > 1e-8:
-
-                forward_xy /= forward_norm
-
-                alignment_cos = np.dot(
-                    forward_xy,
-                    target_dir_xy
-                )
-
-                # Recompensa de heading condicionada al movimiento hacia el objetivo                
-                velocity_factor = np.clip(
-                    radial_velocity / 0.2,
-                    0.0,
-                    1.0
-                )
-
-                heading_alignment_reward = (
-                    0.5
-                    * alignment_cos
-                    * velocity_factor
-                    * (1.0 - obstacle_risk)
-                )
-        
-        if self.random_targets:
-            self.pasos = 15
-            if dist < 0.6 and np.linalg.norm(vel) < 0.6:
-                bonus = 10.0  # BONUS FIJO (sin escalar multiplicativamente por self.score)
-                self.score += 1
-                
-                r = 0.8
-                self.TARGET_POS = np.array([
-                    np.random.uniform(-self.random_value, self.random_value),
-                    np.random.uniform(-self.random_value, self.random_value),
-                    np.random.uniform(0.5, 2.0)
-                ])
-                for i in range(100):
-                    if self._is_space_clear(self.TARGET_POS, radius=r):
-                        self._draw_target_marker([0, 0, 1])
-                        break
-                    else:
-                        self.TARGET_POS = np.array([
-                            np.random.uniform(-self.random_value, self.random_value),
-                            np.random.uniform(-self.random_value, self.random_value),
-                            np.random.uniform(0.5, 2.0)
-                        ])
-                        if i >= 99:
-                            self.truncate_early = True
-                
-                self._prev_dist = None
-
-        elif self.one_only_target:
-            if dist < 0.6 and np.linalg.norm(vel) < 0.4:
-                bonus = 5.0
-                self.score += 1
-                self.time_penalty = 0.0
-
-        else:
-            # MODO SEGUIMIENTO DE TRAYECTORIA (Lemniscata)
-            if dist < 0.7 and np.linalg.norm(vel) < 2.8:
-                bonus = 15.0  # BONUS FIJO
-                self.score += 1
-                self._draw_target_marker([0, 1, 0])
-                
-                self.TARGET_POS = self.point_track.pop(0)
-
-                    
-                self._prev_dist = None
-
-        # Finalización por Puntuación Máxima
-        if self.score == 39 and (self.random_targets or not self.one_only_target):
-            self.truncate_early = True
-            bonus += 20.0  # Bonus de finalización acotado
-
-        # Suma Total
         total_reward = (
-            base_reward 
-            + progress_reward 
-            + heading_alignment_reward 
-            + angle_penalty 
-            + angle_vel_penalty 
-            + self.time_penalty 
-            + action_smooth_penalty
-            + obstacle_speed_penalty
-            + velocity_toward_target_reward
-            + bonus
-            + penaltyLidar
+            base_reward
+            + approach_reward
+            + heading_reward
+            + speed_reward
+            + reverse_penalty
+            + no_approach_penalty
+            + attitude_penalty
+            + yaw_penalty
+            + collision_penalty
+            + braking_penalty
+            + avoidance_reward
+            + wrong_side_penalty
+            + time_penalty
         )
 
+        bonus = 0.0
+        if dist < 1.0 and np.linalg.norm(vel_global) < 2.5:
+            bonus = 12.0
+            self.score += 1
+
+            if not self.one_only_target and getattr(self, 'point_track', None) is not None and len(self.point_track) > 0:
+                self.TARGET_POS = self.point_track.pop(0)
+                self._draw_target_marker([0, 1, 0])
+
+            self._prev_dist = None
+
+        # Si completa la secuencia, recompensa clara pero moderada, sin hackeo artificial.
+        if self.point_track is not None and not self.point_track and not self.one_only_target:
+            self.truncate_early = True
+            bonus += 8.0
+
+        total_reward += bonus
         self.actual_reward += total_reward
-        
-        print(
-        f"dist={dist:.3f} | "
-        f"delta_z={delta_pos[2]:.3f} | "
-        f"vz={vel[2]:.3f} | "
-        f"radial_v={radial_velocity:.3f} | "
-        f"progress={progress_reward:.3f} | "
-        f"action_penalty={action_smooth_penalty:.3f}"
-    )
+
+
         return total_reward
         
     import math
@@ -677,6 +559,8 @@ class HoverAviary(BaseRLAviary):
     # 1. Definimos la FUNCIÓN que genera la lista
     def generar_trayectoria(self, formula_figura, pasos=100):
         lista_puntos = []
+        min_spacing = 0.4
+        incremento = 0.01
         for i in range(pasos + 1):
             # Aquí es donde PREPARAMOS el valor de p (de 0.0 a 1.0)
             p = (i+1) / pasos
@@ -686,22 +570,30 @@ class HoverAviary(BaseRLAviary):
 
             # Mantiene la posición dentro de la misma figura, pero evita
             # aceptar objetivos que estén dentro o demasiado cerca de un obstáculo.
+            
             for _ in range(500):
-                if self._is_space_clear(punto, radius=0.6):
+                if self._is_space_clear(punto, radius=0.2):
                     break
                 # Desplaza el candidato en una dirección aleatoria para salir
                 # del obstáculo sin cambiar el orden de la trayectoria.
                 punto = punto_base + np.random.uniform(
-                    low=[-0.6, -0.6, -0.1],
-                    high=[0.6, 0.6, 0.1]
+                    low=[-0.4 - incremento, -0.4 - incremento, -0.1],
+                    high=[0.4 + incremento, 0.4 + incremento, 0.1]
                 )
+                incremento += 0.01
+                
             else:
                 raise RuntimeError(
                     f"No se encontró un punto libre para p={p:.3f} "
                     "después de 500 intentos"
                 )
             
-            lista_puntos.append(punto)
+            if not lista_puntos or np.linalg.norm(punto - lista_puntos[-1]) >= min_spacing:
+                lista_puntos.append(punto)
+
+        if lista_puntos and np.linalg.norm(lista_puntos[-1] - punto_base) >= min_spacing:
+            lista_puntos.append(punto_base)
+
         return lista_puntos
 
 
@@ -733,6 +625,7 @@ class HoverAviary(BaseRLAviary):
         if self.truncate_early:
             print("Early Truncated - reward: "  + str(self.actual_reward))
             print('score', self.score)
+            print('step counter', self.step_counter)
             self.actual_reward = 0
             self.truncate_early = False
             return True, penalty * 0
@@ -742,6 +635,7 @@ class HoverAviary(BaseRLAviary):
             #print(  f"Truncated far away: pos {state[0:3]}, angles {state[7:10]}")
             print("far away - reward: "  + str(self.actual_reward - penalty))
             print('score', self.score)
+            print('step counter', self.step_counter)
             self.actual_reward = 0
             return True, penalty
         
@@ -753,6 +647,7 @@ class HoverAviary(BaseRLAviary):
             )
 
             print("score", self.score)
+            print('step counter', self.step_counter)
 
             self.actual_reward = 0
 
@@ -762,6 +657,7 @@ class HoverAviary(BaseRLAviary):
             #print(  f"Truncated height: pos {state[0:3]}, angles {state[7:10]}")
             print("height limit - reward: "  + str(self.actual_reward - penalty))
             print('score', self.score)
+            print('step counter', self.step_counter)
             self.actual_reward = 0
             return True, penalty
         
@@ -775,7 +671,7 @@ class HoverAviary(BaseRLAviary):
             )
 
             print("score", self.score)
-
+            print('step counter', self.step_counter)
             self.actual_reward = 0
 
             return True, penalty
@@ -788,6 +684,7 @@ class HoverAviary(BaseRLAviary):
             )
 
             print("score", self.score)
+            print('step counter', self.step_counter)
 
             self.actual_reward = 0
 
@@ -796,6 +693,7 @@ class HoverAviary(BaseRLAviary):
         if np.linalg.norm(self.TARGET_POS-state[0:3]) < .001:
             #print("target reached - reward: "  + str(self.actual_reward - penalty))
             #print('score', self.score)
+            print('step counter', self.step_counter)
             self.actual_reward = 0
             return False, 0
         else:

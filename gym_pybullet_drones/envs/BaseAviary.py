@@ -410,6 +410,8 @@ class BaseAviary(gym.Env):
             clipped_action = np.reshape(self._preprocessAction(action), (self.NUM_DRONES, 4))
         #### Repeat for as many as the aggregate physics steps #####
         for _ in range(self.PYB_STEPS_PER_CTRL):
+            if hasattr(self, "_updateMovingObstacles"):
+                self._updateMovingObstacles(self.PYB_TIMESTEP)
             #### Update and store the drones kinematic info for certain
             #### Between aggregate steps for certain types of update ###
             if self.PYB_STEPS_PER_CTRL > 1 and self.PHYSICS in [Physics.DYN, Physics.PYB_GND, Physics.PYB_DRAG, Physics.PYB_DW, Physics.PYB_GND_DRAG_DW]:
@@ -656,8 +658,15 @@ class BaseAviary(gym.Env):
 
     def _checkObstacleCollision(self):
         """Returns whether any drone is in contact with a registered obstacle."""
-        obstacle_ids = [obstacle_id for obstacle_id in getattr(self, 'cubo_id', [])
-                        if obstacle_id is not None]
+        registered_cubes = getattr(self, 'cubo_id', [])
+        if isinstance(registered_cubes, dict):
+            registered_cubes = registered_cubes.values()
+        cube_ids = [obstacle_id for obstacle_id in registered_cubes
+                    if obstacle_id is not None]
+        torus_ids = [obstacle_id for obstacle_id in getattr(self, 'dona_ids', [])
+                     if obstacle_id is not None]
+        map_ids = [self.map_id] if getattr(self, 'map_id', None) is not None else []
+        obstacle_ids = cube_ids + torus_ids + map_ids
         if not obstacle_ids:
             return False
 

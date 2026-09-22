@@ -78,10 +78,16 @@ class BaseRLAviary(BaseAviary):
         vision_attributes = True if obs == ObservationType.RGB else False
         self.OBS_TYPE = obs
         self.ACT_TYPE = act
+        self.OBSTACLE_TYPE = "donas" # "cubes", "moving_cubes", "donas", "map"
+        self.moving_obstacle_time = 0.0
+        self.moving_obstacle_centers = np.empty((0, 3), dtype=float)
+        self.moving_obstacle_motion = []
         self.prev_v = np.zeros( 3) # placeholder for previous velocity to calculate acceleration for the IMU readings in the kinematic observation space, initialized at zero
         
         self.posBo = [None for i in range(15)] # placeholder for obstacle positions in case we want to remove them later
         self.cubo_id = [None for i in range(15)] # placeholder for obstacle ids in case we want to remove them later
+        self.dona_ids = [] # IDs of torus obstacles used for collision detection
+        self.map_id = None # ID of the map mesh used for collision detection
         self.randomized = randomized
         #### Create integrated controllers #########################
         if act in [ActionType.PID, ActionType.VEL, ActionType.ONE_D_PID]:
@@ -116,8 +122,19 @@ class BaseRLAviary(BaseAviary):
     ################################################################################
     def _addObstacles(self):
         """Add obstacles aligned with the Lemniscate path for ToF RL training."""
+        valid_obstacle_types = {"cubes", "moving_cubes", "donas", "map"}
+        if self.OBSTACLE_TYPE not in valid_obstacle_types:
+            raise ValueError(
+                f"OBSTACLE_TYPE debe ser uno de: {sorted(valid_obstacle_types)}"
+            )
         randoms_obstacles = True
-        if self.OBSTACLES:
+        self.cubo_id = []
+        self.dona_ids = []
+        self.map_id = None
+        self.moving_obstacle_time = 0.0
+        self.moving_obstacle_centers = np.empty((0, 3), dtype=float)
+        self.moving_obstacle_motion = []
+        if self.OBSTACLE_TYPE in ("cubes", "moving_cubes", "donas"):
             if randoms_obstacles:
                 # 1. Definir posiciones según las 3 Zonas Estratégicas:
                 # ZONA 1 (Intersección Central): Cerca del centro (0,0) pero desfasado
@@ -126,32 +143,32 @@ class BaseRLAviary(BaseAviary):
                 
 
                 if self.randomized :
-                    posx = lambda : np.random.uniform(-.5,.5)
-                    posy = lambda : np.random.uniform(-.5,.5)
-                    posz = lambda : np.random.uniform(-1.5,1.5)
+                    posx = lambda : np.random.uniform(-.1,.1)
+                    posy = lambda : np.random.uniform(-.1,.1)
+                    posz = lambda : np.random.uniform(-0.5, 2)
                 else:
                     posx = lambda : 0
                     posy = lambda : 0
                     posz = lambda : 0
                 
                 self.posBo = [
-                    [ 2.3 + posx(),  2.3 + posy(), 1.0 + posz()],
-                    [ 6.4 + posx(), -1.4 + posy(), 1.0 + posz()],
-                    [ 1.4 + posx(), -1.2 + posy(), 1.0 + posz()],
-                    [-1.0 + posx(),  2.0 + posy(), 1.0 + posz()],
-                    [-5.0 + posx(),  0.4 + posy(), 1.0 + posz()],
+                    [2.4 + posx(), 3.2 + posy(), 1.0 + posz()],
+                    [5.4 + posx(), -1.4 + posy(), 1.0 + posz()],
+                    [-5.0 + posx(), 0.4 + posy(), 1.0 + posz()],
                     [-2.3 + posx(), -2.3 + posy(), 1.0 + posz()],
                 ]
+                self.moving_obstacle_centers = np.asarray(self.posBo, dtype=float)
                 
-                # Inicializar diccionario/lista de IDs si no existe
-                self.cubo_id = {} if not hasattr(self, 'cubo_id') else self.cubo_id
+                # Los IDs se indexan por cubo durante la creación.
+                self.cubo_id = {}
                 
                 # 3. Crear los cuerpos estáticos en la simulación
-                for i, pos in enumerate(self.posBo):
+                create_cubes = self.OBSTACLE_TYPE in ("cubes", "moving_cubes")
+                for i, pos in enumerate(self.posBo if create_cubes else []):
                     if self.randomized :
-                        ancho = np.random.uniform(.1,.4)
-                        largo = np.random.uniform(.1,.4)
-                        alto  = np.random.uniform(.4,1.2)
+                        ancho = np.random.uniform(.2,.24)
+                        largo = np.random.uniform(.2,.24)
+                        alto  = np.random.uniform(1.5,2.7)
                     else:
                         ancho = 0.15
                         largo = 0.15
@@ -176,88 +193,201 @@ class BaseRLAviary(BaseAviary):
                         basePosition=pos,
                         physicsClientId=self.CLIENT
                     )
+
+                    if self.OBSTACLE_TYPE == "moving_cubes":
+                        rng = np.random.default_rng(i + 1001)
+                        self.moving_obstacle_motion.append({
+                            "amplitude": np.array([
+                                rng.uniform(0.8, 1.8),
+                                rng.uniform(0.8, 1.8),
+                                rng.uniform(0.25, 0.75),
+                            ]),
+                            "frequency": rng.uniform(0.05, 0.25, size=3),
+                            "phase": rng.uniform(0.0, 2.0 * np.pi, size=3),
+                            "rotation_amplitude": rng.uniform(
+                                np.deg2rad(15.0), np.deg2rad(40.0), size=3
+                            ),
+                            "rotation_frequency": rng.uniform(0.12, 0.35, size=3),
+                            "rotation_phase": rng.uniform(0.0, 2.0 * np.pi, size=3),
+                        })
                     
-            else:
+                    # Las donas solo se usan con cubos estáticos.
+                if self.OBSTACLE_TYPE == "donas":
+                    self.dona_ids = self.generar_5_donas(radio_int_min=0.7)
+        else:
                 # Tu código previo para cargar la malla del mapa .obj
                 visual_id = p.createVisualShape(
                     shapeType=p.GEOM_MESH,
                     fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
-                    meshScale=[2, 2, 2],
+                    meshScale=[4, 4, 4],
                     physicsClientId=self.CLIENT
                 )
 
                 collision_id = p.createCollisionShape(
                     shapeType=p.GEOM_MESH,
                     fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
-                    meshScale=[2, 2, 2],
+                    meshScale=[4, 4, 4],
                     flags=p.GEOM_FORCE_CONCAVE_TRIMESH,
                     physicsClientId=self.CLIENT
                 )
 
-                mapa_id = p.createMultiBody(
+                self.map_id = p.createMultiBody(
                     baseMass=0,
                     baseCollisionShapeIndex=collision_id,
                     baseVisualShapeIndex=visual_id,
-                    basePosition=[2 * 4.5, 2 * 4.5, 0.01],
+                    basePosition=[4 * 4.5, 4 * 4.5, 0.01],
                     baseOrientation=p.getQuaternionFromEuler([0, 0, 0]),
                     physicsClientId=self.CLIENT
                 )
-    # def _addObstacles(self):
-    #     """Add obstacles to the environment.
 
-    #     Only if the observation is of type RGB, 4 landmarks are added.
-    #     Overrides BaseAviary's method.
+    def _updateMovingObstacles(self, dt):
+        """Move cube obstacles smoothly inside their configured motion margins."""
+        if self.OBSTACLE_TYPE != "moving_cubes" or not self.moving_obstacle_motion:
+            return
 
-    #     """
+        self.moving_obstacle_time += dt
+        for index, obstacle_id in enumerate(self.cubo_id.values()):
+            motion = self.moving_obstacle_motion[index]
+            angular_position = (
+                2.0 * np.pi * motion["frequency"] * self.moving_obstacle_time
+                + motion["phase"]
+            )
+            position = self.moving_obstacle_centers[index] + motion["amplitude"] * np.sin(angular_position)
+            angular_rotation = (
+                2.0 * np.pi * motion["rotation_frequency"] * self.moving_obstacle_time
+                + motion["rotation_phase"]
+            )
+            orientation = p.getQuaternionFromEuler(
+                motion["rotation_amplitude"] * np.sin(angular_rotation)
+            )
+            p.resetBasePositionAndOrientation(
+                int(obstacle_id), position, orientation, physicsClientId=self.CLIENT
+            )
+
                     
-    #     randoms_obstacles= True
-    #     if self.OBSTACLES:
-    #         if randoms_obstacles:
 
-    #             self.posBo[0] = [1.8,0,1.8]
-    #             self.posBo[1]  = [-1.8,0,1.8]
-    #             self.posBo[2]  = [0,1.8,1.8]
-    #             self.posBo[3]  = [0,-1.8,1.8]
-    #             self.posBo[4]  = [10,0,1.8]
-                
-                
-    #             #print("obstaculos!!!!!!!!!!!!!!")
-    #             # create multiple random boxes in the environment
-    #             col_id = p.createCollisionShape(p.GEOM_BOX, halfExtents=[0.35, 0.35, 1.8], physicsClientId=self.CLIENT)
-    #             vis_id = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.35, 0.35, 1.8], rgbaColor=[0.8, 0.2, 0.2, 1], physicsClientId=self.CLIENT)
-    #             for i in range(len(self.posBo)):
-    #                 self.cubo_id[i] = p.createMultiBody(baseMass=1, # 0 lo hace estático e inamovible
-    #                             baseCollisionShapeIndex=col_id,
-    #                             baseVisualShapeIndex=vis_id,
-    #                             #basePosition=[np.random.uniform(1, 3.5) * np.random.choice([-1, 1]), np.random.uniform(1, 3.5) * np.random.choice([-1, 1]), 0.8],
-    #                             basePosition=self.posBo[i],
-    #                             physicsClientId=self.CLIENT)
+    def crear_malla_dona(self, radio_interior, grosor_tubo, num_secciones=24, num_segmentos_tubo=12):
+        R = radio_interior + grosor_tubo
+        r = grosor_tubo
+        vertices = []
+        indices = []
 
-                
-    #         else:
-    #             # 1. Crear la forma visual
-    #             visual_id = p.createVisualShape(
-    #                 shapeType=p.GEOM_MESH,
-    #                 fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
-    #                 meshScale=[2, 2, 2]
-    #             )
+        for i in range(num_secciones):
+            u = i * 2 * np.pi / num_secciones
+            cos_u, sin_u = np.cos(u), np.sin(u)
+            for j in range(num_segmentos_tubo):
+                v = j * 2 * np.pi / num_segmentos_tubo
+                cos_v, sin_v = np.cos(v), np.sin(v)
+                x = (R + r * cos_v) * cos_u
+                y = (R + r * cos_v) * sin_u
+                z = r * sin_v
+                vertices.append([x, y, z])
 
-    #             # 2. Crear la forma de colisión FORZANDO malla cóncava (Trimesh)
-    #             collision_id = p.createCollisionShape(physicsClientId=self.CLIENT,
-    #                 shapeType=p.GEOM_MESH,
-    #                 fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
-    #                 meshScale=[2, 2, 2],
-    #                 flags=p.GEOM_FORCE_CONCAVE_TRIMESH  # <--- ESTO SOLUCIONA EL "AIRE SÓLIDO"
-    #             )
+        for i in range(num_secciones):
+            i_next = (i + 1) % num_secciones
+            for j in range(num_segmentos_tubo):
+                j_next = (j + 1) % num_segmentos_tubo
+                v1 = i * num_segmentos_tubo + j
+                v2 = i_next * num_segmentos_tubo + j
+                v3 = i_next * num_segmentos_tubo + j_next
+                v4 = i * num_segmentos_tubo + j_next
+                indices.extend([v1, v2, v3, v1, v3, v4])
 
-    #             # 3. Crear el cuerpo en el mundo
-    #             mapa_id = p.createMultiBody(physicsClientId=self.CLIENT,
-    #                 baseMass=0,
-    #                 baseCollisionShapeIndex=collision_id,
-    #                 baseVisualShapeIndex=visual_id,
-    #                 basePosition=[2*4.5, 2*4.5, 0.01],
-    #                 baseOrientation=p.getQuaternionFromEuler([0, 0, 0]),
-    #             )
+        return np.array(vertices, dtype=np.float32), np.array(indices, dtype=np.int32)
+
+    def guardar_obj_temporal(self, vertices, indices, filename="dona_temp.obj"):
+        with open(filename, "w") as f:
+            for v in vertices:
+                f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+            for i in range(0, len(indices), 3):
+                f.write(f"f {indices[i]+1} {indices[i+1]+1} {indices[i+2]+1}\n")
+        return filename
+
+    def generar_5_donas(self, radio_int_min=0.7):
+        """
+        Genera e inserta 5 donas delgadas cóncavas en la simulación de PyBullet.
+        """
+        donas_ids = []
+        if self.randomized :
+            posx = lambda : np.random.uniform(-0.5, 0.5)
+            posy = lambda : np.random.uniform(-0.5, 0.5)
+            posz = lambda : np.random.uniform(-0.5, 0.5)
+        else:
+            posx = lambda : 0
+            posy = lambda : 0
+            posz = lambda : 0
+        
+        
+        posicion = [
+                    [ 2.4 + posx(),  3.2 + posy(), 2.0 + posz()],
+                    [ 2.6 + posx(),  1.5 + posy(), 2.0 + posz()],
+                    [ 1.4 + posx(), -1.2 + posy(), 2.0 + posz()],
+                    [-5.0 + posx(),  0.4 + posy(), 2.0 + posz()],
+                    [ 5.0 + posx(),  0.4 + posy(), 2.0 + posz()],
+
+                    [-2.3 + posx(), -2.3 + posy(), 2.0 + posz()],
+                    [ 5.4 + posx(), -1.4 + posy(), 2.0 + posz()],                   
+                    [-1.0 + posx(),  2.0 + posy(), 2.0 + posz()],
+                ]
+        
+        for i in range(posicion.__len__()):
+            # 1. Parámetros aleatorios (Radio interno >= 3.0, tubo delgado)
+            
+            if self.randomized :
+                radio_interior = np.random.uniform(radio_int_min, radio_int_min + .3)
+                grosor_tubo = np.random.uniform(0.05, 0.25)
+            else:
+                radio_interior = radio_int_min
+                grosor_tubo = 0.1
+
+            # 2. Posición espacial aleatoria a lo largo de la ruta del dron
+            posicion 
+
+            # 3. Orientación (pitch, roll, yaw) y color RGB aleatorio
+            if self.randomized :
+                rot_euler = [
+                    np.random.uniform(np.pi/2, np.pi/2),
+                    np.random.uniform(0, 0),
+                    np.random.uniform(0, 2*np.pi)
+                ]
+                color_rgba = [np.random.random(), np.random.random(), np.random.random(), 1.0]
+            else:
+                rot_euler = [
+                    0,
+                    np.pi/2,
+                    0
+                ]
+                color_rgba = [np.random.random(), np.random.random(), np.random.random(), 1.0]
+
+
+            # 4. Construcción de archivo .obj e importación con malla cóncava
+            filename = f"dona_obstaculo_{i}.obj"
+            vertices, indices = self.crear_malla_dona(radio_interior, grosor_tubo)
+            obj_path = self.guardar_obj_temporal(vertices, indices, filename)
+
+            col_id = p.createCollisionShape(
+                shapeType=p.GEOM_MESH,
+                fileName=obj_path,
+                flags=p.GEOM_FORCE_CONCAVE_TRIMESH
+            )
+            vis_id = p.createVisualShape(
+                shapeType=p.GEOM_MESH,
+                fileName=obj_path,
+                rgbaColor=color_rgba
+            )
+
+            quat = p.getQuaternionFromEuler(rot_euler)
+            
+            dona_id = p.createMultiBody(
+                baseMass=0,  # Estático (masa 0)
+                baseCollisionShapeIndex=col_id,
+                baseVisualShapeIndex=vis_id,
+                basePosition=posicion[i],
+                baseOrientation=quat
+            )
+            donas_ids.append(dona_id)
+
+        return donas_ids
     ################################################################################
 
     def _actionSpace(self):
@@ -538,8 +668,14 @@ class BaseRLAviary(BaseAviary):
                 S = 5.0
                 d_norm = np.tanh(dist_total / S)
 
-                # E. Velocidades Angulares (PQR)
-                pqr_local = obs[13:16]
+                # E. Velocidades Angulares en el marco LOCAL del dron.
+                # PyBullet devuelve la velocidad angular en coordenadas globales,
+                # por lo que la transformamos al frame del cuerpo usando la
+                # rotación actual del dron para que el valor sea invariante a
+                # la orientación inicial del drone.
+                ang_vel_global = obs[13:16]
+                vel_angle_local = rot_matrix.T @ ang_vel_global
+
                 # --- IMPRESIONES DE VERIFICACIÓN DE ESTADO LOCAL ---
                 azimuth_local_deg = np.degrees(np.arctan2(u_unit_local[1], u_unit_local[0]))
                 elevation_local_deg = np.degrees(np.arcsin(np.clip(u_unit_local[2], -1.0, 1.0)))
@@ -558,22 +694,21 @@ class BaseRLAviary(BaseAviary):
                 # [3]     -> d_norm (Distancia normalizada)
                 # [4:8]   -> q_local (Cuaternión de actitud local [x, y, z, w])
                 # [8:11]  -> current_v_local (Velocidad lineal local)
-                # [11:14] -> pqr_local (Velocidad angular local)
+                # [11:14] -> vel_angle_local (Velocidad angular local)
                 obs_14[i, :] = np.hstack([
                     u_unit_local,      # 3
                     d_norm,            # 1
                     q_local,           # 4
                     current_v_local,   # 3
-                    pqr_local          # 3
+                    vel_angle_local          # 3
                 ]).reshape(14,)
                 
-                print(
-                    f"target_dir_global={u_unit_global} | "
-                    f"u_local={u_unit_local} | "
-                    f"vel_global={current_v_global} | "
-                    f"vel_local={current_v_local} | "
-                    f"action={self.action}"
-                )
+                # print(
+                #     f"u_local={u_unit_local} | "
+                #     f"vel_global={current_v_global} | "
+                #     f"vel_local={current_v_local} | "
+                #     f"vel_angle_local={vel_angle_local} | "
+                # )
 
 
             self.lidar_buffer.append(self.lidar.copy())
