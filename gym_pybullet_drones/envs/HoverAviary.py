@@ -22,7 +22,7 @@ class HoverAviary(BaseRLAviary):
                  act: ActionType=ActionType.RPM,
                  random_targets: bool = False,
                  randomized = False,
-                 rabbit_mode="keyboard"
+                 rabbit_mode="script" # "script" , "keyboard"
                  ):
         """Initialization of a single agent RL environment.
 
@@ -88,6 +88,7 @@ class HoverAviary(BaseRLAviary):
         
         if self.randomized :
             initial_xyzs = np.array([[np.random.uniform(-0.8, 0.8),np.random.uniform(-0.8, 0.8), np.random.uniform(0.8, 1.5)]])
+
 
             
         super().__init__(drone_model=drone_model,
@@ -195,6 +196,23 @@ class HoverAviary(BaseRLAviary):
                                              baseCollisionShapeIndex=self.TEST_BODY, 
                                              basePosition=[0, 0, -10],
                                              physicsClientId=self.CLIENT)
+        
+        if self.rabbit_mode is not None:
+            # Crear una esfera visual única que actuará como marcador objetivo
+            if self.GUI :
+                visual_shape_id = p.createVisualShape(
+                    shapeType=p.GEOM_SPHERE,
+                    radius=0.15,
+                    rgbaColor=[0, 1, 0, 0.8]  # Verde semi-transparente
+                )
+                # createMultiBody con mass=0 crea un objeto estático sin colisión
+                self._target_visual_id = p.createMultiBody(
+                    baseMass=0,
+                    baseVisualShapeIndex=visual_shape_id,
+                    basePosition=self.TARGET_POS
+                )
+                
+                
         benchmark = False
         if benchmark:
             # -------------------------------------------------------------------------
@@ -992,19 +1010,7 @@ class HoverAviary(BaseRLAviary):
             self.TARGET_POS[2], 0.5, 5.0
         )
 
-        # Crear una esfera visual única que actuará como marcador objetivo
-        if self.GUI and not hasattr(self, '_target_visual_id'):
-            visual_shape_id = p.createVisualShape(
-                shapeType=p.GEOM_SPHERE,
-                radius=0.15,
-                rgbaColor=[0, 1, 0, 0.8]  # Verde semi-transparente
-            )
-            # createMultiBody con mass=0 crea un objeto estático sin colisión
-            self._target_visual_id = p.createMultiBody(
-                baseMass=0,
-                baseVisualShapeIndex=visual_shape_id,
-                basePosition=self.TARGET_POS
-            )
+
         
         p.resetBasePositionAndOrientation(
         self._target_visual_id,
