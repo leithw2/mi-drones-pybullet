@@ -78,7 +78,7 @@ class BaseRLAviary(BaseAviary):
         vision_attributes = True if obs == ObservationType.RGB else False
         self.OBS_TYPE = obs
         self.ACT_TYPE = act
-        self.OBSTACLE_TYPE = "donas" # "cubes", "moving_cubes", "donas", "map"
+        self.OBSTACLE_TYPE = "moving_cubes" # "cubes", "moving_cubes", "donas", "map"
         self.moving_obstacle_time = 0.0
         self.moving_obstacle_centers = np.empty((0, 3), dtype=float)
         self.moving_obstacle_motion = []
@@ -92,7 +92,7 @@ class BaseRLAviary(BaseAviary):
         #### Create integrated controllers #########################
         if act in [ActionType.PID, ActionType.VEL, ActionType.ONE_D_PID]:
             os.environ['KMP_DUPLICATE_LIB_OK']='True'
-            if drone_model in [DroneModel.CF2X, DroneModel.CF2P]:
+            if drone_model in [DroneModel.CF2X, DroneModel.CF2X250, DroneModel.CF2P]:
                 self.ctrl = [DSLPIDControl(drone_model=DroneModel.CF2X) for i in range(num_drones)]
             else:
                 print("[ERROR] in BaseRLAviary.__init()__, no controller is available for the specified drone_model")
@@ -118,11 +118,13 @@ class BaseRLAviary(BaseAviary):
         self.prev_action = None
         self.max_action_delta = 0.05
         self.smooth_lambda = 0.20
+        self.BRUSHLESS_MOTOR_TIME_CONSTANT = 0.05
+        self.brushless_rpm = np.full((self.NUM_DRONES, 4), self.HOVER_RPM)
 
     ################################################################################
     def _addObstacles(self):
         """Add obstacles aligned with the Lemniscate path for ToF RL training."""
-        valid_obstacle_types = {"cubes", "moving_cubes", "donas", "map"}
+        valid_obstacle_types = {"cubes", "moving_cubes", "donas", "map", "none"}
         if self.OBSTACLE_TYPE not in valid_obstacle_types:
             raise ValueError(
                 f"OBSTACLE_TYPE debe ser uno de: {sorted(valid_obstacle_types)}"
@@ -215,30 +217,31 @@ class BaseRLAviary(BaseAviary):
                 if self.OBSTACLE_TYPE == "donas":
                     self.dona_ids = self.generar_5_donas(radio_int_min=0.7)
         else:
-                # Tu código previo para cargar la malla del mapa .obj
-                visual_id = p.createVisualShape(
-                    shapeType=p.GEOM_MESH,
-                    fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
-                    meshScale=[4, 4, 4],
-                    physicsClientId=self.CLIENT
-                )
+                # # Tu código previo para cargar la malla del mapa .obj
+                # visual_id = p.createVisualShape(
+                #     shapeType=p.GEOM_MESH,
+                #     fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
+                #     meshScale=[4, 4, 4],
+                #     physicsClientId=self.CLIENT
+                # )
 
-                collision_id = p.createCollisionShape(
-                    shapeType=p.GEOM_MESH,
-                    fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
-                    meshScale=[4, 4, 4],
-                    flags=p.GEOM_FORCE_CONCAVE_TRIMESH,
-                    physicsClientId=self.CLIENT
-                )
+                # collision_id = p.createCollisionShape(
+                #     shapeType=p.GEOM_MESH,
+                #     fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
+                #     meshScale=[4, 4, 4],
+                #     flags=p.GEOM_FORCE_CONCAVE_TRIMESH,
+                #     physicsClientId=self.CLIENT
+                # )
 
-                self.map_id = p.createMultiBody(
-                    baseMass=0,
-                    baseCollisionShapeIndex=collision_id,
-                    baseVisualShapeIndex=visual_id,
-                    basePosition=[4 * 4.5, 4 * 4.5, 0.01],
-                    baseOrientation=p.getQuaternionFromEuler([0, 0, 0]),
-                    physicsClientId=self.CLIENT
-                )
+                # self.map_id = p.createMultiBody(
+                #     baseMass=0,
+                #     baseCollisionShapeIndex=collision_id,
+                #     baseVisualShapeIndex=visual_id,
+                #     basePosition=[4 * 4.5, 4 * 4.5, 0.01],
+                #     baseOrientation=p.getQuaternionFromEuler([0, 0, 0]),
+                #     physicsClientId=self.CLIENT
+                # )
+            pass
 
     def _updateMovingObstacles(self, dt):
         """Move cube obstacles smoothly inside their configured motion margins."""
@@ -399,7 +402,7 @@ class BaseRLAviary(BaseAviary):
             A Box of size NUM_DRONES x 4, 3, or 1, depending on the action type.
 
         """
-        if self.ACT_TYPE in [ActionType.RPM, ActionType.VEL]:
+        if self.ACT_TYPE in [ActionType.RPM, ActionType.BRUSHLESS_THRUST, ActionType.VEL]:
             size = 4
         elif self.ACT_TYPE==ActionType.PID:
             size = 3
@@ -446,6 +449,8 @@ class BaseRLAviary(BaseAviary):
 
         """
         self.action_buffer.append(action)
+        if self.ACT_TYPE == ActionType.BRUSHLESS_THRUST and self.step_counter == 0:
+            self.brushless_rpm.fill(self.HOVER_RPM)
         
         self.action = action.copy()
 
@@ -456,6 +461,20 @@ class BaseRLAviary(BaseAviary):
             target = action[k, :]
             if self.ACT_TYPE == ActionType.RPM:
                 rpm[k,:] = np.array(self.HOVER_RPM * (1+0.05*target))
+            elif self.ACT_TYPE == ActionType.BRUSHLESS_THRUST:
+                target = np.clip(np.asarray(target, dtype=float), -1.0, 1.0)
+                max_motor_thrust = self.MAX_THRUST / 4.0
+                hover_motor_thrust = self.GRAVITY / 4.0
+                motor_thrust = np.where(
+                    target <= 0.0,
+                    hover_motor_thrust * (target + 1.0),
+                    hover_motor_thrust
+                    + (max_motor_thrust - hover_motor_thrust) * target
+                )
+                target_rpm = np.sqrt(np.maximum(motor_thrust, 0.0) / self.KF)
+                alpha = 1.0 - np.exp(-self.CTRL_TIMESTEP / self.BRUSHLESS_MOTOR_TIME_CONSTANT)
+                self.brushless_rpm[k, :] += alpha * (target_rpm - self.brushless_rpm[k, :])
+                rpm[k, :] = self.brushless_rpm[k, :]
             elif self.ACT_TYPE == ActionType.PID:
                 state = self._getDroneStateVector(k)
                 next_pos = self._calculateNextStep(
@@ -552,7 +571,7 @@ class BaseRLAviary(BaseAviary):
                 self.lidar_buffer.append(np.zeros((self.NUM_DRONES, lidar_size)))
 
             for i in range(self.ACTION_BUFFER_SIZE):
-                if self.ACT_TYPE in [ActionType.RPM, ActionType.VEL]:
+                if self.ACT_TYPE in [ActionType.RPM, ActionType.BRUSHLESS_THRUST, ActionType.VEL]:
                     action_size = 4
                 elif self.ACT_TYPE==ActionType.PID:
                     action_size = 3
@@ -718,6 +737,7 @@ class BaseRLAviary(BaseAviary):
             # Agregar buffers de acción y LiDAR a la observación
             for i in range(self.ACTION_BUFFER_SIZE):
                 ret = np.hstack([ret, np.array([self.action_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
+                #print(f"Action Buffer {i}: {self.action_buffer[i]}")  # Imprime el contenido del buffer de acción
             for i in range(self.LIDAR_BUFFER_SIZE):
                 ret = np.hstack([ret, np.array([self.lidar_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
                 

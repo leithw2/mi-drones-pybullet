@@ -1,5 +1,6 @@
 import numpy as np
 import pybullet as p
+import pygame as pg
 import math
 from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, ObservationType
@@ -9,7 +10,7 @@ class HoverAviary(BaseRLAviary):
     
     
     def __init__(self,
-                 drone_model: DroneModel=DroneModel.CF2X,
+                 drone_model: DroneModel=DroneModel.CF2X250,
                  initial_xyzs=np.array([[0, 0, np.random.uniform(0.8, 2.5)]]),
                  initial_rpys=None,
                  physics: Physics=Physics.PYB,
@@ -20,7 +21,8 @@ class HoverAviary(BaseRLAviary):
                  obs: ObservationType=ObservationType.KIN,
                  act: ActionType=ActionType.RPM,
                  random_targets: bool = False,
-                 randomized = False
+                 randomized = False,
+                 rabbit_mode="keyboard"
                  ):
         """Initialization of a single agent RL environment.
 
@@ -50,6 +52,11 @@ class HoverAviary(BaseRLAviary):
             The type of action space (1 or 3D; RPMS, thurst and torques, or waypoint with PID control)
 
         """
+        
+        pg.init()
+        pg.joystick.init()
+        pg.display.init()
+        
         self.random_targets = random_targets
         self.one_only_target = False
         self.TARGET_POS = np.array([9,9,2])
@@ -66,6 +73,18 @@ class HoverAviary(BaseRLAviary):
         self.point_track = None
         self.random_value = 1.6
         self.randomized = randomized
+        self.rabbit_mode = rabbit_mode
+
+        self.rabbit_center = np.array([0.0, 0.0, 1.5])
+        self.rabbit_target = self.rabbit_center.copy()
+
+        self.rabbit_radius = 5.0
+        self.rabbit_omega = 0.25
+        self.rabbit_speed = 1.0
+
+        self.rabbit_time = 0.0
+
+        self.rabbit_joystick = None
         
         if self.randomized :
             initial_xyzs = np.array([[np.random.uniform(-0.8, 0.8),np.random.uniform(-0.8, 0.8), np.random.uniform(0.8, 1.5)]])
@@ -114,24 +133,27 @@ class HoverAviary(BaseRLAviary):
         if not self.GUI:
             return
 
-        # Eliminar solamente el marcador anterior
-        if hasattr(self, '_target_marker_id'):
-            p.removeUserDebugItem(self._target_marker_id)
+        # 1. Eliminar el punto anterior manualmente si existe
+        if hasattr(self, '_target_point_id') and self._target_point_id is not None:
+            p.removeUserDebugItem(self._target_point_id)
 
-        self._target_marker_id = p.addUserDebugLine(
+        dt = 0.1
+
+        # La línea sí respeta lifeTime
+        p.addUserDebugLine(
             self.TARGET_POS,
             [0, 0, 0],
             color,
             lineWidth=1,
-            lifeTime=0
+            lifeTime=dt
         )
 
-        # Punto del objetivo actual
+        # El punto se crea con lifeTime=0 y guardamos su ID para borrarlo en el siguiente paso
         self._target_point_id = p.addUserDebugPoints(
             pointPositions=self.TARGET_POS.reshape(1, 3),
             pointColorsRGB=[color],
             pointSize=10,
-            lifeTime=0
+            lifeTime=dt
         )
     
     def _draw_trajectory(self, trajectory):
@@ -154,7 +176,7 @@ class HoverAviary(BaseRLAviary):
     def reset(self, *args, **kwargs):
         self.score = 1
         self.time_penalty = 0
-        self.prev_action = None
+        self._prev_ang_vel = None
         self._probe_id = None
         self._probe_shape = None
         if self.randomized :
@@ -173,155 +195,148 @@ class HoverAviary(BaseRLAviary):
                                              baseCollisionShapeIndex=self.TEST_BODY, 
                                              basePosition=[0, 0, -10],
                                              physicsClientId=self.CLIENT)
-
-        # -------------------------------------------------------------------------
-        # BENCHMARKS TRAYECTORIAS CANÓNICAS DE LA LITERATURA DE DRONES
-        # -------------------------------------------------------------------------
-        # Paramétrización general: p va de 0.0 a 1.0
-        if self.randomized:
-            Amplitudx = np.random.uniform(4,9)
-            Amplitudy = np.random.uniform(4,9)
-        else : 
-            Amplitudx = 6
-            Amplitudy = 6
-        # print("Amplitud ", Amplitud)
-        # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
-        lemniscata_8 = lambda p: np.round(np.array([
-            Amplitudx * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
-            Amplitudy * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
-            1.6 + 0.8 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
-        ]), 2)
-        
-        # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
-        lemniscata_8_inv = lambda p: np.round(np.array([
-            -Amplitudx * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
-            -Amplitudy * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
-            1.6 + 0.8 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
-        ]), 2)
-
-        # 2. Curva de Lissajous 3D (Acoplamiento triaxial complejo)
-        lissajous_3d = lambda p: np.round(np.array([
-            4.0 * math.sin(6 * 2 * math.pi * p),              # X: Frecuencia fx = 3
-            4.0 * math.cos(4 * 2 * math.pi * p),              # Y: Frecuencia fy = 2
-            2.2 + 0.9 * math.sin(4 * 2 * math.pi * p)         # Z: Frecuencia fz = 4
-        ]), 2)
-
-        # 3. Espirograma 3D / Epitrocoide de recorrido amplio y mayor frecuencia.
-        # El radio efectivo aumenta y la curva completa dos ciclos principales.
-        R_out, r_in, d_val = 6.0, 1.0, 3.0
-        spiro_frequency = 1.0
-        spirograph_3d = lambda p: np.round(np.array([
-            (R_out - r_in) * math.cos(spiro_frequency * 2 * math.pi * p) + d_val * math.cos((R_out - r_in) / r_in * spiro_frequency * 2 * math.pi * p),
-            (R_out - r_in) * math.sin(spiro_frequency * 2 * math.pi * p) - d_val * math.sin((R_out - r_in) / r_in * spiro_frequency * 2 * math.pi * p),
-            2.5 + 0.8 * math.sin(6 * math.pi * p)
-        ]), 2)
-
-        # 4. Hélice Ascendente Determinista (Radio y paso constantes)
-        helice_ascendente = lambda p: np.round(np.array([
-            3.5 * math.cos(8 * math.pi * p),                  # X: Radio 1.5m, 2 vueltas completas
-            3.5 * math.sin(8 * math.pi * p),                  # Y
-            1.5 + 2.5 * p                                     # Z: Ascenso continuo de 0.5m a 2.0m
-        ]), 2)
-
-        # 5. Respuesta a Escalón Poligonal (Waypoints tipo Cuadrado Zig-Zag)
-        def waypoints_square(p):
-            # Divide p [0, 1] en 4 segmentos rectos
-            if p < 0.25:
-                t = p / 0.5
-                return np.array([2.5 * t, 0.0, 1.5])
-            elif p < 0.50:
-                t = (p - 0.25) / 0.25
-                return np.array([2.5, 2.5 * t, 1.2])
-            elif p < 0.75:
-                t = (p - 0.50) / 0.25
-                return np.array([2.5 * (1 - t), 2.5, 1.0])
-            else:
-                t = (p - 0.75) / 0.25
-                return np.array([0.0, 2.5 * (1 - t), 1.5])
-
-        map_route = np.array([
-            [0.0, 1.0, 1.2],
-
-            [0.0, 12.0, 1.8],
-            [0.0, 14.0, 1.2],
-            [2.0, 16.0, 1.8],
-            [6.0, 16.0, 1.8],
-            [4.0, 20.0, 1.8],
-            [4.0, 20.0, 1.8],
-            [0.0, 26.0, 1.8],
-            [10.0, 27.0, 1.8],
-
-        ])
-
-        def map_waypoint_route(p):
-            num_segments = len(map_route) - 1
-            segment_length = 1.0 / num_segments
-            segment_index = min(int(p / segment_length), num_segments - 1)
-            t = (p - segment_index * segment_length) / segment_length
-            return (1 - t) * map_route[segment_index] + t * map_route[segment_index + 1]
-
-        # -------------------------------------------------------------------------
-        
-        if self.random_targets:
-            self.TARGET_POS = np.array([
-                np.random.uniform(-self.random_value, self.random_value),
-                np.random.uniform(-self.random_value, self.random_value),
-                np.random.uniform(1.0, 1.0)
-            ])
-            r = 0.8
-            for i in range(500):
-                if self._is_space_clear(self.TARGET_POS, radius=r):
-                    self._draw_target_marker([0, 1, 0])
-                    break      
-                else:
-                    self.TARGET_POS = np.array([
-                        np.random.uniform(-self.random_value, self.random_value),
-                        np.random.uniform(-self.random_value, self.random_value),
-                        np.random.uniform(1.0, 1.0)
-                    ])    
-
-        elif not self.one_only_target and not self.random_targets:
-            # Lista de trayectorias benchmark disponibles
-            benchmarks = [lemniscata_8, lemniscata_8_inv, lissajous_3d, spirograph_3d, helice_ascendente]
-            benchmark_names = ["Lemniscata 8", "Lemniscata 8 Invertida", "Lissajous 3D", "Spirograph 3D", "Helice ascendente", "Mapa por waypoints"]
-            #benchmarks = [map_waypoint_route]
-            # benchmark_names = ["Spirograph 3D", "Helice ascendente"]
-            
-            # Selección aleatoria o manual del test (0: Lemniscata, 1: Lissajous, 2: Spirograph, 3: Hélice, 4: Cuadrado)
-            self.task_idx = np.random.choice(len(benchmarks))
-            print("Benchmark seleccionado: ", benchmark_names[self.task_idx])
-            
-            # print("Direction ", self.task_idx )
-            # Menos puntos para que los waypoints consecutivos queden más separados.
+        benchmark = False
+        if benchmark:
+            # -------------------------------------------------------------------------
+            # BENCHMARKS TRAYECTORIAS CANÓNICAS DE LA LITERATURA DE DRONES
+            # -------------------------------------------------------------------------
+            # Paramétrización general: p va de 0.0 a 1.0
             if self.randomized:
-                self.pasos = np.random.randint(50,60)
+                Amplitudx = np.random.uniform(4,9)
+                Amplitudy = np.random.uniform(4,9)
             else : 
-                self.pasos = 50
+                Amplitudx = 6
+                Amplitudy = 6
+            # print("Amplitud ", Amplitud)
+            # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
+            lemniscata_8 = lambda p: np.round(np.array([
+                Amplitudx * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
+                Amplitudy * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
+                1.6 + 0.8 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
+            ]), 2)
             
-            self.point_track = self.generar_trayectoria(
-                                                        benchmarks[self.task_idx],
-                                                        pasos=self.pasos
-                                                        )
-            self.pasos = len(self.point_track)
+            # 1. Figura en 8 (Lemniscata de Gerono - Estándar Agilicious / Mellinger)
+            lemniscata_8_inv = lambda p: np.round(np.array([
+                -Amplitudx * math.sin(6 * math.pi * p),                  # X: Amplitud 2m
+                -Amplitudy * math.sin(12 * math.pi * p) / 2.0,            # Y: Doble frecuencia para el cruce
+                1.6 + 0.8 * math.cos(2 * math.pi * p)             # Z: Oscilación suave de altura
+            ]), 2)
 
-            # print(self.point_track)
-            # Dibujar TODA la trayectoria
-            self._draw_trajectory(self.point_track)
+            # 2. Curva de Lissajous 3D (Acoplamiento triaxial complejo)
+            lissajous_3d = lambda p: np.round(np.array([
+                4.0 * math.sin(6 * 2 * math.pi * p),              # X: Frecuencia fx = 3
+                4.0 * math.cos(4 * 2 * math.pi * p),              # Y: Frecuencia fy = 2
+                2.2 + 0.9 * math.sin(4 * 2 * math.pi * p)         # Z: Frecuencia fz = 4
+            ]), 2)
 
-            # Primer punto como objetivo actual
-            self.TARGET_POS = self.point_track.pop(0)
+            # 3. Espirograma 3D / Epitrocoide de recorrido amplio y mayor frecuencia.
+            # El radio efectivo aumenta y la curva completa dos ciclos principales.
+            R_out, r_in, d_val = 6.0, 1.0, 3.0
+            spiro_frequency = 1.0
+            spirograph_3d = lambda p: np.round(np.array([
+                (R_out - r_in) * math.cos(spiro_frequency * 2 * math.pi * p) + d_val * math.cos((R_out - r_in) / r_in * spiro_frequency * 2 * math.pi * p),
+                (R_out - r_in) * math.sin(spiro_frequency * 2 * math.pi * p) - d_val * math.sin((R_out - r_in) / r_in * spiro_frequency * 2 * math.pi * p),
+                2.5 + 0.8 * math.sin(6 * math.pi * p)
+            ]), 2)
 
-            self._draw_target_marker([0, 1, 0]) 
-           
-            print(f"Benchmark Activo: ID {self.task_idx} | Puntos Restantes: {len(self.point_track)}")
+            # 4. Hélice Ascendente Determinista (Radio y paso constantes)
+            helice_ascendente = lambda p: np.round(np.array([
+                3.0 * math.cos(8 * math.pi * p),                  # X: Radio 1.5m, 2 vueltas completas
+                3.0 * math.sin(8 * math.pi * p),                  # Y
+                1.5 + 2.5 * p                                     # Z: Ascenso continuo de 0.5m a 2.0m
+            ]), 2)
 
-        elif self.one_only_target and not self.random_targets:
-            self.TARGET_POS = np.array([0.0, 0.0, 1.0])
-            self.pasos = 0
-            self._draw_target_marker([0, 1, 0])
+            # 5. Respuesta a Escalón Poligonal (Waypoints tipo Cuadrado Zig-Zag)
+            def waypoints_square(p):
+                # Divide p [0, 1] en 4 segmentos rectos
+                if p < 0.25:
+                    t = p / 0.5
+                    return np.array([2.5 * t, 0.0, 1.5])
+                elif p < 0.50:
+                    t = (p - 0.25) / 0.25
+                    return np.array([2.5, 2.5 * t, 1.2])
+                elif p < 0.75:
+                    t = (p - 0.50) / 0.25
+                    return np.array([2.5 * (1 - t), 2.5, 1.0])
+                else:
+                    t = (p - 0.75) / 0.25
+                    return np.array([0.0, 2.5 * (1 - t), 1.5])
+
+            map_route = np.array([
+                [0.0, 1.0, 1.2],
+
+                [0.0, 12.0, 1.8],
+                [0.0, 14.0, 1.2],
+                [2.0, 16.0, 1.8],
+                [6.0, 16.0, 1.8],
+                [4.0, 20.0, 1.8],
+                [4.0, 20.0, 1.8],
+                [0.0, 26.0, 1.8],
+                [10.0, 27.0, 1.8],
+
+            ])
+        
+            if self.random_targets:
+                self.TARGET_POS = np.array([
+                    np.random.uniform(-self.random_value, self.random_value),
+                    np.random.uniform(-self.random_value, self.random_value),
+                    np.random.uniform(1.0, 1.0)
+                ])
+                r = 0.8
+                for i in range(500):
+                    if self._is_space_clear(self.TARGET_POS, radius=r):
+                        self._draw_target_marker([0, 1, 0])
+                        break      
+                    else:
+                        self.TARGET_POS = np.array([
+                            np.random.uniform(-self.random_value, self.random_value),
+                            np.random.uniform(-self.random_value, self.random_value),
+                            np.random.uniform(1.0, 1.0)
+                        ])    
+
+            elif not self.one_only_target and not self.random_targets:
+                # Lista de trayectorias benchmark disponibles
+                benchmarks = [lemniscata_8, lemniscata_8_inv, lissajous_3d, spirograph_3d, helice_ascendente]
+                benchmark_names = ["Lemniscata 8", "Lemniscata 8 Invertida", "Lissajous 3D", "Spirograph 3D", "Helice ascendente", "Mapa por waypoints"]
+                #benchmarks = [lemniscata_8, lemniscata_8_inv]
+                #benchmark_names = ["Lemniscata 8", "Lemniscata 8 Invertida"]
+                
+                # Selección aleatoria o manual del test (0: Lemniscata, 1: Lissajous, 2: Spirograph, 3: Hélice, 4: Cuadrado)
+                self.task_idx = np.random.choice(len(benchmarks))
+                print("Benchmark seleccionado: ", benchmark_names[self.task_idx])
+                
+                # print("Direction ", self.task_idx )
+                # Menos puntos para que los waypoints consecutivos queden más separados.
+                if self.randomized:
+                    self.pasos = np.random.randint(40,50)
+                else : 
+                    self.pasos = 40
+                
+                self.point_track = self.generar_trayectoria(
+                                                            benchmarks[self.task_idx],
+                                                            pasos=self.pasos
+                                                            )
+                self.pasos = len(self.point_track)
+
+                # print(self.point_track)
+                # Dibujar TODA la trayectoria
+                self._draw_trajectory(self.point_track)
+
+                # Primer punto como objetivo actual
+                self.TARGET_POS = self.point_track.pop(0)
+
+                #self._draw_target_marker([0, 1, 0]) 
+            
+                print(f"Benchmark Activo: ID {self.task_idx} | Puntos Restantes: {len(self.point_track)}")
+
+            elif self.one_only_target and not self.random_targets:
+                self.TARGET_POS = np.array([0.0, 0.0, 1.0])
+                self.pasos = 0
+                self._draw_target_marker([0, 1, 0])
 
         self._prev_dist = None
         self.truncate_early = False
+        
         self.prev_action = None
         self.lidar_risk_memory = 0.0
 
@@ -329,7 +344,14 @@ class HoverAviary(BaseRLAviary):
         return self._computeObs(), info
 
     ################################################################################
-    
+    def map_waypoint_route(p):
+        num_segments = len(map_route) - 1
+        segment_length = 1.0 / num_segments
+        segment_index = min(int(p / segment_length), num_segments - 1)
+        t = (p - segment_index * segment_length) / segment_length
+        return (1 - t) * map_route[segment_index] + t * map_route[segment_index + 1]
+
+    # -------------------------------------------------------------------------
     def _is_space_clear(self, pos, radius=0.2, ignore_ids=[]):
         if getattr(self, "_probe_id", None) is None:
             self._probe_shape = p.createCollisionShape(
@@ -434,10 +456,10 @@ class HoverAviary(BaseRLAviary):
         return self.lidar_risk_memory, safer_side
 
     def _computeReward(self):
-        """Reward mínimo, local y orientado a seguir la trayectoria."""
+        """Reward local orientado a seguir la trayectoria de forma suave y controlada."""
 
         self.truncate_early = False
-
+        self._update_rabbit_target()
         state = self._getDroneStateVector(0)
         pos = state[0:3]
         vel_global = state[10:13]
@@ -467,54 +489,300 @@ class HoverAviary(BaseRLAviary):
 
         target_xy = target_local[:2]
         target_xy_norm = np.linalg.norm(target_xy)
+
         heading_alignment = 1.0
+
         if target_xy_norm > 1e-8:
             target_xy = target_xy / target_xy_norm
-            heading_alignment = float(np.dot(np.array([1.0, 0.0]), target_xy))
-        heading_alignment = float(np.clip(heading_alignment, -1.0, 1.0))
+            heading_alignment = float(
+                np.dot(np.array([1.0, 0.0]), target_xy)
+            )
 
-        forward_progress = float(np.dot(vel[:2], target_xy))
-        forward_speed = float(max(vel[0], 0.0))
+        heading_alignment = float(
+            np.clip(heading_alignment, -1.0, 1.0)
+        )
+
+        forward_progress = float(
+            np.dot(vel[:2], target_xy)
+        )
+
+        forward_speed = float(
+            max(vel[0], 0.0)
+        )
+
+        speed_magnitude = float(
+            np.linalg.norm(vel_global)
+        )
+
+        # ============================================================
+        # GUÍA DE OBSTÁCULOS
+        # ============================================================
 
         obstacle_risk, safer_side = self._get_obstacle_guidance(vel)
+
         collision_penalty = -2.5 * obstacle_risk
+
         if obstacle_risk > 0.35:
-            collision_penalty -= 4.0 * (obstacle_risk - 0.35) / 0.65
+            collision_penalty -= (
+                4.0
+                * (obstacle_risk - 0.35)
+                / 0.65
+            )
+
         if obstacle_risk > 0.75:
-            collision_penalty -= 4.0 * (obstacle_risk - 0.75) / 0.25
-        collision_penalty = float(np.clip(collision_penalty, -10.0, 0.0))
+            collision_penalty -= (
+                4.0
+                * (obstacle_risk - 0.75)
+                / 0.25
+            )
 
-        # Near an obstacle, forward speed is dangerous. The useful action is to
-        # slow down and move toward the side with the clearer LiDAR sector.
-        braking_penalty = -3.0 * obstacle_risk * max(forward_speed - 0.35, 0.0)
-        safe_lateral_speed = safer_side * vel[1]
-        avoidance_reward = 2.5 * obstacle_risk * np.clip(safe_lateral_speed, 0.0, 1.0)
-        wrong_side_penalty = -1.5 * obstacle_risk * np.clip(-safe_lateral_speed, 0.0, 1.0)
-
-        # Evitamos actitud excesiva y giros bruscos.
-        attitude_penalty = -0.5 * (
-            max(abs(roll) - np.deg2rad(20.0), 0.0)
-            + max(abs(pitch) - np.deg2rad(20.0), 0.0)
+        collision_penalty = float(
+            np.clip(
+                collision_penalty,
+                -10.0,
+                0.0
+            )
         )
-        yaw_penalty = -0.08 * abs(ang_vel[2])
 
-        # La tarea principal es tocar los waypoints. Si el dron no se acerca al
-        # objetivo, debe perder recompensa; la supervivencia no debe pagar más que
-        # el progreso real hacia el waypoint actual.
+        braking_penalty = (
+            -3.0
+            * obstacle_risk
+            * max(forward_speed - 0.35, 0.0)
+        )
+
+        safe_lateral_speed = safer_side * vel[1]
+
+        avoidance_reward = (
+            2.5
+            * obstacle_risk
+            * np.clip(
+                safe_lateral_speed,
+                0.0,
+                1.0
+            )
+        )
+
+        wrong_side_penalty = (
+            -1.5
+            * obstacle_risk
+            * np.clip(
+                -safe_lateral_speed,
+                0.0,
+                1.0
+            )
+        )
+
+        # ============================================================
+        # CONTROL DE VELOCIDAD MÁXIMA
+        # ============================================================
+
+        target_speed_limit = 1.2
+
+        excess_speed = max(
+            0.0,
+            speed_magnitude - target_speed_limit
+        )
+
+        excess_speed_penalty = (
+            -1.5
+            * (excess_speed ** 2)
+        )
+
+        # ============================================================
+        # TAREA PRINCIPAL
+        # ============================================================
+
         base_reward = 0.0
-        approach_reward = 6.0 * max(progress, 0.0) * (1.0 - 0.65 * obstacle_risk)
-        no_approach_penalty = 0.0
-        if progress <= 0.0 and dist > 0.8:
-            no_approach_penalty -= 2.5 * (1.0 + min(dist, 8.0) / 8.0)
-        if forward_progress < 0.05 and dist > 1.0:
-            no_approach_penalty -= 1.5
-        if heading_alignment < 0.25 and dist > 1.0:
-            no_approach_penalty -= 0.8
 
-        heading_reward = 1.5 * max(heading_alignment, 0.0) * max(0.0, 1.0 - dist / 8.0)
-        speed_reward = 0.5 * max(forward_progress, 0.0) * max(0.0, 1.0 - dist / 6.0)
-        reverse_penalty = -0.8 * min(forward_progress, 0.0)
-        time_penalty = -0.02
+        approach_reward = (
+            5.0
+            * max(progress, 0.0)
+            * (1.0 - 0.65 * obstacle_risk)
+        )
+
+        no_approach_penalty = 0.0
+
+        if progress <= 0.0 and dist > 0.8:
+            no_approach_penalty -= (
+                1.5
+                * (
+                    1.0
+                    + min(dist, 8.0) / 8.0
+                )
+            )
+
+        if forward_progress < 0.05 and dist > 1.0:
+            no_approach_penalty -= 0.5
+
+        if heading_alignment < 0.2 and dist > 1.0:
+            no_approach_penalty -= 0.2
+
+        heading_reward = (
+            1.2
+            * max(heading_alignment, 0.0)
+            * max(0.0, 1.0 - dist / 8.0)
+        )
+
+        speed_reward = (
+            0.4
+            * max(forward_progress, 0.0)
+            * max(0.0, 1.0 - dist / 6.0)
+        )
+
+        reverse_penalty = (
+            -0.8
+            * min(forward_progress, 0.0)
+        )
+
+        time_penalty = -0.025
+
+        # ============================================================
+        # INICIALIZACIÓN DE ESTADOS PREVIOS
+        # ============================================================
+
+        action_now = np.asarray(
+            self.action,
+            dtype=np.float32
+        ).flatten()
+
+        if (
+            not hasattr(self, "_prev_action")
+            or self._prev_action is None
+            or self._prev_action.shape != action_now.shape
+        ):
+            self._prev_action = action_now.copy()
+
+        if (
+            not hasattr(self, "_prev_ang_vel")
+            or self._prev_ang_vel is None
+            or self._prev_ang_vel.shape != ang_vel.shape
+        ):
+            self._prev_ang_vel = ang_vel.copy()
+
+        # ============================================================
+        # 1. SUAVIDAD DE ACCIÓN
+        # ============================================================
+
+        action_delta = (
+            action_now - self._prev_action
+        )
+
+        action_change_penalty = (
+            -0.25
+            * float(np.mean(action_delta ** 2))
+        )
+
+        action_change_penalty = float(
+            np.clip(
+                action_change_penalty,
+                -0.6,
+                0.0
+            )
+        )
+
+        # ============================================================
+        # 2. TEMBLORES / CAMBIOS BRUSCOS DE VELOCIDAD ANGULAR
+        # ============================================================
+
+        angular_delta = (
+            ang_vel - self._prev_ang_vel
+        )
+
+        jitter_penalty = (
+            -0.20
+            * float(
+                np.sum(angular_delta[:2] ** 2)
+            )
+        )
+
+        jitter_penalty = float(
+            np.clip(
+                jitter_penalty,
+                -0.8,
+                0.0
+            )
+        )
+
+        # ============================================================
+        # 3. VELOCIDAD ANGULAR CONTINUA
+        # ============================================================
+
+        ang_vel_penalty = (
+            -0.15
+            * float(
+                np.linalg.norm(ang_vel[:2])
+            )
+        )
+
+        ang_vel_penalty = float(
+            np.clip(
+                ang_vel_penalty,
+                -0.5,
+                0.0
+            )
+        )
+
+        # ============================================================
+        # 4. MANTENER HORIZONTE
+        # ============================================================
+
+        horizon_limit = np.deg2rad(10.0)
+
+        excess_roll = max(
+            abs(roll) - horizon_limit,
+            0.0
+        )
+
+        excess_pitch = max(
+            abs(pitch) - horizon_limit,
+            0.0
+        )
+
+        horizon_penalty = (
+            -0.4
+            * (
+                excess_roll
+                + excess_pitch
+            )
+        )
+
+        horizon_penalty = float(
+            np.clip(
+                horizon_penalty,
+                -0.5,
+                0.0
+            )
+        )
+
+        # ============================================================
+        # 5. RECOMPENSA POR ESTABILIDAD
+        # ============================================================
+
+        attitude_error = np.sqrt(
+            roll ** 2 + pitch ** 2
+        )
+
+        angular_activity = np.linalg.norm(
+            ang_vel[:2]
+        )
+
+        smooth_flight_reward = (
+            0.15
+            * np.exp(
+                -4.0 * attitude_error
+            )
+            * np.exp(
+                -3.0 * angular_activity
+            )
+        )
+
+        # Guardar estados para el siguiente paso
+        self._prev_action = action_now.copy()
+        self._prev_ang_vel = ang_vel.copy()
+
+        # ============================================================
+        # REWARD TOTAL
+        # ============================================================
 
         total_reward = (
             base_reward
@@ -523,39 +791,230 @@ class HoverAviary(BaseRLAviary):
             + speed_reward
             + reverse_penalty
             + no_approach_penalty
-            + attitude_penalty
-            + yaw_penalty
+            + jitter_penalty
+            + ang_vel_penalty
+            + excess_speed_penalty
+            + smooth_flight_reward
+            + action_change_penalty
             + collision_penalty
             + braking_penalty
             + avoidance_reward
             + wrong_side_penalty
             + time_penalty
+            + horizon_penalty
         )
 
+        # ============================================================
+        # WAYPOINT
+        # ============================================================
+
         bonus = 0.0
-        if dist < 1.0 and np.linalg.norm(vel_global) < 2.5:
-            bonus = 12.0
+
+        if dist < 1.0 and speed_magnitude < 2.0:
+
+            bonus = 20.0
             self.score += 1
 
-            if not self.one_only_target and getattr(self, 'point_track', None) is not None and len(self.point_track) > 0:
-                self.TARGET_POS = self.point_track.pop(0)
-                self._draw_target_marker([0, 1, 0])
+            if (
+                not self.one_only_target
+                and getattr(
+                    self,
+                    "point_track",
+                    None
+                ) is not None
+                and len(self.point_track) > 0
+            ):
+
+                self.TARGET_POS = (
+                    self.point_track.pop(0)
+                )
+
+                self._draw_target_marker(
+                    [0, 1, 0]
+                )
 
             self._prev_dist = None
 
-        # Si completa la secuencia, recompensa clara pero moderada, sin hackeo artificial.
-        if self.point_track is not None and not self.point_track and not self.one_only_target:
+        # ============================================================
+        # FINAL DE LA TRAYECTORIA
+        # ============================================================
+
+        if (
+            self.point_track is not None
+            and not self.point_track
+            and not self.one_only_target
+        ):
+
             self.truncate_early = True
-            bonus += 8.0
+            bonus += 30.0
 
         total_reward += bonus
-        self.actual_reward += total_reward
 
+        self.actual_reward += total_reward
 
         return total_reward
         
     import math
+    
+    def _update_rabbit_target(self):
+        """Actualiza TARGET_POS: programado, teclado o joystick."""
+        pg.event.pump()
+        if self.rabbit_mode is None:
+            return
 
+        dt = 1.0 / self.CTRL_FREQ
+
+        # ============================================================
+        # 1. CONEJO PROGRAMADO
+        # ============================================================
+
+        if self.rabbit_mode == "script":
+
+            t = self.step_counter / self.CTRL_FREQ
+
+            self.TARGET_POS = self.rabbit_center + np.array([
+                self.rabbit_radius * np.cos(self.rabbit_omega * t),
+                self.rabbit_radius * np.sin(self.rabbit_omega * t),
+                0.5 * np.sin(0.5 * self.rabbit_omega * t)
+            ])
+
+        # ============================================================
+        # 2. CONEJO CONTROLADO POR TECLADO
+        # ============================================================
+
+        # ============================================================
+        # 2. CONEJO CONTROLADO POR TECLADO (PyBullet Native API)
+        # ============================================================
+
+        elif self.rabbit_mode == "keyboard":
+
+            # Obtener el mapa de eventos del teclado desde PyBullet
+            keys = p.getKeyboardEvents()
+
+            x = 0.0
+            y = 0.0
+            z = 0.0
+
+            # PyBullet usa constantes enteras o el valor ord() para las teclas.
+            # Verificamos si la tecla está en estado pulsado (KEY_WAS_TRIGGERED) 
+            # o mantenida (KEY_IS_DOWN).
+            
+            # Flecha Izquierda
+            if p.B3G_LEFT_ARROW in keys and (keys[p.B3G_LEFT_ARROW] & (p.KEY_IS_DOWN | p.KEY_WAS_TRIGGERED)):
+                x = -2.0
+            # Flecha Derecha
+            if p.B3G_RIGHT_ARROW in keys and (keys[p.B3G_RIGHT_ARROW] & (p.KEY_IS_DOWN | p.KEY_WAS_TRIGGERED)):
+                x = 2.0
+            # Flecha Arriba
+            if p.B3G_UP_ARROW in keys and (keys[p.B3G_UP_ARROW] & (p.KEY_IS_DOWN | p.KEY_WAS_TRIGGERED)):
+                y = 2.0
+            # Flecha Abajo
+            if p.B3G_DOWN_ARROW in keys and (keys[p.B3G_DOWN_ARROW] & (p.KEY_IS_DOWN | p.KEY_WAS_TRIGGERED)):
+                y = -2.0
+
+            # Tecla 'q' (usando el código ASCII ord('q'))
+            if ord('q') in keys and (keys[ord('q')] & (p.KEY_IS_DOWN | p.KEY_WAS_TRIGGERED)):
+                z = 2.0
+            # Tecla 'a' (usando el código ASCII ord('a'))
+            if ord('a') in keys and (keys[ord('a')] & (p.KEY_IS_DOWN | p.KEY_WAS_TRIGGERED)):
+                z = -2.0
+
+            self.TARGET_POS[0] += x * self.rabbit_speed * dt
+            self.TARGET_POS[1] += y * self.rabbit_speed * dt
+            self.TARGET_POS[2] += z * self.rabbit_speed * dt
+
+        # ============================================================
+        # 3. CONEJO CONTROLADO POR JOYSTICK
+        # ============================================================
+
+        elif self.rabbit_mode == "joystick":
+
+
+            if self.rabbit_joystick is None:
+
+
+                if pg.joystick.get_count() == 0:
+                    raise RuntimeError(
+                        "No se detectó ningún joystick."
+                    )
+
+                self.rabbit_joystick = pg.joystick.Joystick(0)
+                self.rabbit_joystick.init()
+
+                print(
+                    "Joystick conectado:",
+                    self.rabbit_joystick.get_name()
+                )
+
+            pg.event.pump()
+
+            # Stick izquierdo
+            x = self.rabbit_joystick.get_axis(0)
+            y = -self.rabbit_joystick.get_axis(1)
+
+            # Stick derecho vertical para altura
+            z = -self.rabbit_joystick.get_axis(3)
+
+            # Dead-zone
+            deadzone = 0.10
+
+            if abs(x) < deadzone:
+                x = 0.0
+
+            if abs(y) < deadzone:
+                y = 0.0
+
+            if abs(z) < deadzone:
+                z = 0.0
+
+            self.TARGET_POS[0] += x * self.rabbit_speed * dt
+            self.TARGET_POS[1] += y * self.rabbit_speed * dt
+            self.TARGET_POS[2] += z * self.rabbit_speed * dt
+
+        else:
+            raise ValueError(
+                f"rabbit_mode desconocido: {self.rabbit_mode}"
+            )
+
+        # ============================================================
+        # LÍMITES
+        # ============================================================
+
+        self.TARGET_POS[0] = np.clip(
+            self.TARGET_POS[0], -15.0, 15.0
+        )
+
+        self.TARGET_POS[1] = np.clip(
+            self.TARGET_POS[1], -15.0, 15.0
+        )
+
+        self.TARGET_POS[2] = np.clip(
+            self.TARGET_POS[2], 0.5, 5.0
+        )
+
+        # Crear una esfera visual única que actuará como marcador objetivo
+        if self.GUI and not hasattr(self, '_target_visual_id'):
+            visual_shape_id = p.createVisualShape(
+                shapeType=p.GEOM_SPHERE,
+                radius=0.15,
+                rgbaColor=[0, 1, 0, 0.8]  # Verde semi-transparente
+            )
+            # createMultiBody con mass=0 crea un objeto estático sin colisión
+            self._target_visual_id = p.createMultiBody(
+                baseMass=0,
+                baseVisualShapeIndex=visual_shape_id,
+                basePosition=self.TARGET_POS
+            )
+        
+        p.resetBasePositionAndOrientation(
+        self._target_visual_id,
+        self.TARGET_POS,
+        [0, 0, 0, 1]  # Cuaternión identidad
+        )
+            
+        
+        
+        
     # 1. Definimos la FUNCIÓN que genera la lista
     def generar_trayectoria(self, formula_figura, pasos=100):
         lista_puntos = []

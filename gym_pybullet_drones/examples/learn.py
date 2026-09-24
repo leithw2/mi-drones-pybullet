@@ -63,14 +63,15 @@ DEFAULT_OUTPUT_FOLDER = 'results'
 DEFAULT_COLAB = False
 
 DEFAULT_OBS = ObservationType('kin') # 'kin' or 'rgb'
-DEFAULT_ACT = ActionType('rpm') # 'rpm' or 'pid' or 'vel' or 'one_d_rpm' or 'one_d_pid'
+DEFAULT_DRONE = DroneModel.CF2X250
+DEFAULT_ACT = ActionType.BRUSHLESS_THRUST
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
-physics=Physics.PYB_WIND # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
+physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
 # Start a fresh policy after changing the obstacle reward. Set this to a model
 # folder only when intentionally fine-tuning an existing policy.
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'ToF_yawLocal09.20.2026_10.01.22')
-#CONTINUE_FROM = None
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'motores_250g_09.23.2026_02.50.51')
+# CONTINUE_FROM = None
 RANDOM_TARGETS=False # True or False
 
 
@@ -130,42 +131,42 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'ToF_yawLocal'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'motores_250g_'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
     # Alternar entre entrenamiento con render (GUI) y entrenamiento rápido (vectorizado)
     if gui:
         if not multiagent:
-            train_env = HoverAviary(gui=gui, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, randomized = True)            
+            train_env = HoverAviary(gui=gui, drone_model=DEFAULT_DRONE, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, randomized = True)            
             # En la sección donde creas eval_env:
-            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized = False)
+            eval_env = HoverAviary(drone_model=DEFAULT_DRONE, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized = False)
             eval_env = Monitor(eval_env)
             eval_env = FixedSeedEvalWrapper(eval_env, seeds=list(range(10))) # <-- AÑADIR ESTA LÍNEA
             
         else:
-            train_env = MultiHoverAviary(gui=gui, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
-            eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
+            train_env = MultiHoverAviary(gui=gui, drone_model=DEFAULT_DRONE, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
+            eval_env = MultiHoverAviary(drone_model=DEFAULT_DRONE, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             
             eval_env = Monitor(eval_env)
         use_render_callback = True
     else:
         if not multiagent:
             train_env = make_vec_env(HoverAviary,
-                                    env_kwargs=dict(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized = True),
+                                    env_kwargs=dict(drone_model=DEFAULT_DRONE, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized = True),
                                     n_envs=N_ENVS,
                                     seed=0
                                     )
-            eval_env = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized=False)
+            eval_env = HoverAviary(drone_model=DEFAULT_DRONE, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized=False)
             eval_env = Monitor(eval_env)
             eval_env = FixedSeedEvalWrapper(eval_env, seeds=list(range(10)))
         else:
             train_env = make_vec_env(MultiHoverAviary,
-                                    env_kwargs=dict(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics,),
+                                    env_kwargs=dict(drone_model=DEFAULT_DRONE, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics,),
                                     n_envs=N_ENVS,
                                     seed=0
                                     )
-            eval_env = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
+            eval_env = MultiHoverAviary(drone_model=DEFAULT_DRONE, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
             eval_env = Monitor(eval_env)
         use_render_callback = False
 
@@ -178,9 +179,9 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if continue_from and os.path.isfile(os.path.join(filename, 'final_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'final_model.zip')}")
         model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device=DEVICE,
-        ent_coef = 0.005, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
+        #ent_coef = 0.005, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
         # target_kl= 0.6, # Aumentado para permitir más 
-        clip_range = 0.1, 
+        #clip_range = 0.1, 
         # learning_rate = lambda p: 0.0005
         )
         
@@ -205,7 +206,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                     ortho_init=True,
                 ),
                     
-                ent_coef=0.01,
+                ent_coef=0.02,
                 clip_range=0.2,
                 verbose=1,                
                 )
@@ -324,20 +325,22 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     #### Show (and record a video of) the model's performance ##
     if not multiagent:
         test_env = HoverAviary(gui=True,
+                       drone_model=DEFAULT_DRONE,
                                obs=DEFAULT_OBS,
                                act=DEFAULT_ACT,
                                record=record_video,
                                initial_xyzs=np.array([[0,0,1]]),
                                initial_rpys=np.array([[0,0,0]]),
                                random_targets=RANDOM_TARGETS, physics=Physics.PYB)
-        test_env_nogui = HoverAviary(obs=DEFAULT_OBS, act=DEFAULT_ACT)
+        test_env_nogui = HoverAviary(drone_model=DEFAULT_DRONE, obs=DEFAULT_OBS, act=DEFAULT_ACT)
     else:
         test_env = MultiHoverAviary(gui=True,
+                        drone_model=DEFAULT_DRONE,
                                         num_drones=DEFAULT_AGENTS,
                                         obs=DEFAULT_OBS,
                                         act=DEFAULT_ACT,
                                         record=record_video,)
-        test_env_nogui = MultiHoverAviary(num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT)
+        test_env_nogui = MultiHoverAviary(drone_model=DEFAULT_DRONE, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT)
     logger = Logger(logging_freq_hz=int(test_env.CTRL_FREQ),
                 num_drones=DEFAULT_AGENTS if multiagent else 1,
                 output_folder=output_folder,

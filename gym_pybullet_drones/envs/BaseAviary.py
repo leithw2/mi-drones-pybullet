@@ -119,7 +119,7 @@ class BaseAviary(gym.Env):
         self.HOVER_RPM = np.sqrt(self.GRAVITY / (4*self.KF))
         self.MAX_RPM = np.sqrt((self.THRUST2WEIGHT_RATIO*self.GRAVITY) / (4*self.KF))
         self.MAX_THRUST = (4*self.KF*self.MAX_RPM**2)
-        if self.DRONE_MODEL == DroneModel.CF2X:
+        if self.DRONE_MODEL in [DroneModel.CF2X, DroneModel.CF2X250]:
             self.MAX_XY_TORQUE = (2*self.L*self.KF*self.MAX_RPM**2)/np.sqrt(2)
         elif self.DRONE_MODEL == DroneModel.CF2P:
             self.MAX_XY_TORQUE = (self.L*self.KF*self.MAX_RPM**2)
@@ -608,7 +608,7 @@ class BaseAviary(gym.Env):
         
         # 2. Definir una rejilla 8x8 de rayos en coordenadas locales.
         # X es frente, Y izquierda y Z arriba; el FOV es de 60 grados.
-        fov = np.deg2rad(60)
+        fov = np.deg2rad(65)
         angles = np.linspace(-fov / 2, fov / 2, 8)
         locales = []
         for vertical in angles:
@@ -1099,7 +1099,7 @@ class BaseAviary(gym.Env):
         if self.DRONE_MODEL == DroneModel.RACE:
             z_torques = -z_torques
         z_torque = (-z_torques[0] + z_torques[1] - z_torques[2] + z_torques[3])
-        if self.DRONE_MODEL==DroneModel.CF2X or self.DRONE_MODEL==DroneModel.RACE:
+        if self.DRONE_MODEL in [DroneModel.CF2X, DroneModel.CF2X250, DroneModel.RACE]:
             x_torque = (forces[0] + forces[1] - forces[2] - forces[3]) * (self.L/np.sqrt(2))
             y_torque = (- forces[0] + forces[1] + forces[2] - forces[3]) * (self.L/np.sqrt(2))
         elif self.DRONE_MODEL==DroneModel.CF2P:

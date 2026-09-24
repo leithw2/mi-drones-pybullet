@@ -10,7 +10,7 @@ import gymnasium as gym
 from stable_baselines3 import PPO
 from gym_pybullet_drones.envs.HoverAviary import HoverAviary
 from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
-from gym_pybullet_drones.utils.enums import ObservationType, ActionType, Physics
+from gym_pybullet_drones.utils.enums import DroneModel, ObservationType, ActionType, Physics
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(SCRIPT_DIR, 'results')
@@ -52,11 +52,13 @@ def control_simulation_speed(sim_speed, ctrl_freq):
 
 def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, output_folder='results', colab=False, episodes=30, max_steps=3000000, sim_speed = 1.0):
     DEFAULT_OBS = ObservationType('kin')
-    DEFAULT_ACT = ActionType('rpm')
+    DEFAULT_DRONE = DroneModel.CF2X250
+    DEFAULT_ACT = ActionType.BRUSHLESS_THRUST
     DEFAULT_AGENTS = 1
     
     if not multiagent:
         test_env = HoverAviary(
+            drone_model=DEFAULT_DRONE,
             gui=gui,
             obs=DEFAULT_OBS,
             act=DEFAULT_ACT,
@@ -70,6 +72,7 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
         )
     else:
         test_env = MultiHoverAviary(
+            drone_model=DEFAULT_DRONE,
             gui=gui,
             num_drones=DEFAULT_AGENTS,
             obs=DEFAULT_OBS,
@@ -130,7 +133,7 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones a máxima velocidad')
-    default_model_path = os.path.join(RESULTS_DIR, 'ToF_yawLocal09.20.2026_10.01.22', 'best_model')
+    default_model_path = os.path.join(RESULTS_DIR, 'motores_250g_09.23.2026_02.50.51', 'best_model')
     
     parser.add_argument('--model_path', type=str, default=default_model_path, help='Ruta al modelo PPO')
     parser.add_argument('--multiagent', action='store_true', help='Usar MultiHoverAviary')
