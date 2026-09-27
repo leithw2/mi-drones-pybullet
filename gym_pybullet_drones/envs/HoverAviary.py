@@ -22,7 +22,7 @@ class HoverAviary(BaseRLAviary):
                  act: ActionType=ActionType.RPM,
                  random_targets: bool = False,
                  randomized = False,
-                 rabbit_mode="script" # "script" , "keyboard"
+                 rabbit_mode = "keyboard" # "script" , "keyboard"
                  ):
         """Initialization of a single agent RL environment.
 
@@ -213,7 +213,7 @@ class HoverAviary(BaseRLAviary):
                 )
                 
                 
-        benchmark = False
+        benchmark = True
         if benchmark:
             # -------------------------------------------------------------------------
             # BENCHMARKS TRAYECTORIAS CANÓNICAS DE LA LITERATURA DE DRONES
@@ -326,9 +326,9 @@ class HoverAviary(BaseRLAviary):
                 # print("Direction ", self.task_idx )
                 # Menos puntos para que los waypoints consecutivos queden más separados.
                 if self.randomized:
-                    self.pasos = np.random.randint(40,50)
+                    self.pasos = np.random.randint(50,60)
                 else : 
-                    self.pasos = 40
+                    self.pasos = 50
                 
                 self.point_track = self.generar_trayectoria(
                                                             benchmarks[self.task_idx],
@@ -454,23 +454,60 @@ class HoverAviary(BaseRLAviary):
         if self.lidar is None:
             return 0.0, 0.0
 
-        current_lidar = np.asarray(self.lidar[0, :64], dtype=float).reshape(8, 8)
+        current_lidar = np.asarray(
+            self.lidar[0, :64],
+            dtype=float
+        ).reshape(8, 8)
+
         current_lidar = self._smooth_lidar_map(current_lidar)
+
         closest_risk = float(np.max(current_lidar))
-        strongest_rays = np.partition(current_lidar.reshape(-1), -8)[-8:]
-        obstacle_risk = float(np.clip(
-            0.7 * closest_risk + 0.3 * np.mean(strongest_rays), 0.0, 1.0
+
+        strongest_rays = np.partition(
+            current_lidar.reshape(-1),
+            -8
+        )[-8:]
+
+        # CAMBIO: antes se usaba directamente esta combinación como obstacle_risk
+        raw_risk = float(np.clip(
+            0.7 * closest_risk
+            + 0.3 * np.mean(strongest_rays),
+            0.0,
+            1.0
         ))
 
-        # Columns are ordered from right to left in the drone body frame.
-        left_risk = float(np.mean(current_lidar[:, :3]))
-        right_risk = float(np.mean(current_lidar[:, 5:]))
-        safer_side = float(np.sign((1.0 - right_risk) - (1.0 - left_risk)))
+        # CAMBIO: antes obstacle_risk = raw_risk
+        # Ahora hay una zona muerta hasta ~1.2 m para un LiDAR de 4 m.
+        # raw_risk = 0.70 equivale aproximadamente a 1.2 m.
+        minimum_risk = 0.70
+
+        obstacle_risk = float(np.clip(
+            (raw_risk - minimum_risk)
+            / (1.0 - minimum_risk),
+            0.0,
+            1.0
+        ))
+
+        left_risk = float(
+            np.mean(current_lidar[:, :3])
+        )
+
+        right_risk = float(
+            np.mean(current_lidar[:, 5:])
+        )
+
+        safer_side = float(
+            np.sign(
+                (1.0 - right_risk)
+                - (1.0 - left_risk)
+            )
+        )
 
         self.lidar_risk_memory = max(
             obstacle_risk,
             0.92 * self.lidar_risk_memory
         )
+
         return self.lidar_risk_memory, safer_side
 
     def _computeReward(self):
@@ -652,7 +689,7 @@ class HoverAviary(BaseRLAviary):
             * min(forward_progress, 0.0)
         )
 
-        time_penalty = -0.025
+        time_penalty = -0.045
 
         # ============================================================
         # INICIALIZACIÓN DE ESTADOS PREVIOS

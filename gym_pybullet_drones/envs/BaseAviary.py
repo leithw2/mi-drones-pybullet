@@ -306,23 +306,7 @@ class BaseAviary(gym.Env):
             cameraTargetPosition=front_pos+np.array([0, 0, 0.05]),
             physicsClientId=self.CLIENT
         )
-        #####DEBUGGER William#
-        # if hasattr(self, 'TARGET_POS'):
-        #     target_pos = self.TARGET_POS[drone_id] if self.NUM_DRONES > 1 else self.TARGET_POS
-        #     delta_pos_global = target_pos - np.array(pos)
-        #     dist_total = np.linalg.norm(delta_pos_global)
-        #     u_unit_global = delta_pos_global / (dist_total + 1e-8)
 
-        #     # Proyección al sistema de ejes local del dron
-        #     u_unit_local = rot_matrix.T @ u_unit_global
-
-        #     # Azimut en el marco del dron: 0° = Centro del lente, +90° = Izquierda, -90° = Derecha
-        #     azimuth_local_deg = np.degrees(np.arctan2(u_unit_local[1], u_unit_local[0]))
-        #     elevation_local_deg = np.degrees(np.arcsin(np.clip(u_unit_local[2], -1.0, 1.0)))
-            
-        #     print(azimuth_local_deg, elevation_local_deg)
-
-        #     return u_unit_local, azimuth_local_deg, elevation_local_deg
     
     def step(self,
              action
@@ -356,7 +340,7 @@ class BaseAviary(gym.Env):
             in each subclass for its format.
 
         """
-        #self.update_fpv_gui_camera(0)
+        # self.update_fpv_gui_camera(0)
         #### Save PNG video frames if RECORD=True and GUI=False ####
         if self.RECORD and not self.GUI and self.step_counter%self.CAPTURE_FREQ == 0:
             [w, h, rgb, dep, seg] = p.getCameraImage(width=self.VID_WIDTH,
@@ -609,15 +593,34 @@ class BaseAviary(gym.Env):
         # 2. Definir una rejilla 8x8 de rayos en coordenadas locales.
         # X es frente, Y izquierda y Z arriba; el FOV es de 60 grados.
         fov = np.deg2rad(65)
+        # Inclinación del sensor hacia arriba
+        tilt = np.deg2rad(20.0)
+
         angles = np.linspace(-fov / 2, fov / 2, 8)
+
+        # Rotación local alrededor de Y para apuntar hacia arriba
+        tilt_quat = p.getQuaternionFromEuler([
+            0.0,
+            -tilt,
+            0.0
+        ])
         locales = []
         for vertical in angles:
             for horizontal in angles:
-                locales.append([
-                    2 * np.cos(vertical) * np.cos(horizontal),
-                    2 * np.cos(vertical) * np.sin(horizontal),
-                    2 * np.sin(vertical)
-                ])
+                ray = [
+                    4 * np.cos(vertical) * np.cos(horizontal),
+                    4 * np.cos(vertical) * np.sin(horizontal),
+                    4 * np.sin(vertical)
+                ]
+                # Inclinar todo el arreglo 30° hacia arriba
+                ray_tilted, _ = p.multiplyTransforms(
+                    [0, 0, 0],
+                    tilt_quat,
+                    ray,
+                    [0, 0, 0, 1]
+                )
+
+                locales.append(ray_tilted)
         
         ray_to_list = []
         for loc_point in locales:

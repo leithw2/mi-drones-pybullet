@@ -70,7 +70,7 @@ DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
 # Start a fresh policy after changing the obstacle reward. Set this to a model
 # folder only when intentionally fine-tuning an existing policy.
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'motores_250g_09.23.2026_02.50.51')
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'motores_250g_09.24.2026_16.03.21')
 # CONTINUE_FROM = None
 RANDOM_TARGETS=False # True or False
 
@@ -182,7 +182,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         #ent_coef = 0.005, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
         # target_kl= 0.6, # Aumentado para permitir más 
         #clip_range = 0.1, 
-        # learning_rate = lambda p: 0.0005
+        #learning_rate = lambda p: 0.0005
         )
         
         # model.clip_range = constant_fn(0.2)

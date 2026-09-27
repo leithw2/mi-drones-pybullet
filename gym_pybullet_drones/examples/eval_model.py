@@ -133,7 +133,7 @@ def evaluate_model(model_path, multiagent=False, gui=False, record_video=False, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluar un modelo PPO de gym-pybullet-drones a máxima velocidad')
-    default_model_path = os.path.join(RESULTS_DIR, 'motores_250g_09.23.2026_02.50.51', 'best_model')
+    default_model_path = os.path.join(RESULTS_DIR, 'motores_250g_09.24.2026_16.03.21', 'best_model')
     
     parser.add_argument('--model_path', type=str, default=default_model_path, help='Ruta al modelo PPO')
     parser.add_argument('--multiagent', action='store_true', help='Usar MultiHoverAviary')

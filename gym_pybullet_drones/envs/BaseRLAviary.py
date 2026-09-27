@@ -5,8 +5,9 @@ import pkg_resources
 from scipy.spatial.transform import Rotation as R
 from gymnasium import spaces
 from collections import deque
-
-
+# Importación del modelo de ruido desde tu archivo sensor_noise.py
+from gym_pybullet_drones.utils.SensorNoiseModel import SensorNoiseModel, IMUNoiseConfig, LaserNoiseConfig, OdometryNoiseConfig
+from gym_pybullet_drones.utils.powerloop_track import PowerloopTrack
 from gym_pybullet_drones.envs.BaseAviary import BaseAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, ObservationType, ImageType
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
@@ -29,7 +30,10 @@ class BaseRLAviary(BaseAviary):
                  record=False,
                  obs: ObservationType=ObservationType.KIN,
                  act: ActionType=ActionType.RPM,
-                 randomized = False
+                 randomized = False,
+                 enable_noise = False
+
+                 
                  ):
         """Initialization of a generic single and multi-agent RL environment.
 
@@ -78,7 +82,7 @@ class BaseRLAviary(BaseAviary):
         vision_attributes = True if obs == ObservationType.RGB else False
         self.OBS_TYPE = obs
         self.ACT_TYPE = act
-        self.OBSTACLE_TYPE = "moving_cubes" # "cubes", "moving_cubes", "donas", "map"
+        self.OBSTACLE_TYPE = "powertrack" # "cubes", "moving_cubes", "donas", "map"
         self.moving_obstacle_time = 0.0
         self.moving_obstacle_centers = np.empty((0, 3), dtype=float)
         self.moving_obstacle_motion = []
@@ -89,6 +93,18 @@ class BaseRLAviary(BaseAviary):
         self.dona_ids = [] # IDs of torus obstacles used for collision detection
         self.map_id = None # ID of the map mesh used for collision detection
         self.randomized = randomized
+        
+        # 1. Bandera para activar/desactivar ruido rápidamente
+        self.enable_noise = enable_noise
+
+        # 2. Instanciación del modelo de ruido con configuraciones por defecto
+        # (o puedes personalizar los valores de std/bias aquí)
+        self.noise_model = SensorNoiseModel(
+            imu_config=IMUNoiseConfig(),
+            laser_config=LaserNoiseConfig(),
+            odom_config=OdometryNoiseConfig(),
+            seed=None
+        )
         #### Create integrated controllers #########################
         if act in [ActionType.PID, ActionType.VEL, ActionType.ONE_D_PID]:
             os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -109,7 +125,7 @@ class BaseRLAviary(BaseAviary):
                          obstacles=True, # Add obstacles for RGB observations and/or FlyThruGate
                          user_debug_gui=False, # Remove of RPM sliders from all single agent learning aviaries
                          vision_attributes=vision_attributes,
-                         randomized = randomized
+                         randomized = randomized,
                          )
         #### Set a limit on the maximum target speed ###############
         if act == ActionType.VEL:
@@ -120,11 +136,13 @@ class BaseRLAviary(BaseAviary):
         self.smooth_lambda = 0.20
         self.BRUSHLESS_MOTOR_TIME_CONSTANT = 0.05
         self.brushless_rpm = np.full((self.NUM_DRONES, 4), self.HOVER_RPM)
+        
+        
 
     ################################################################################
     def _addObstacles(self):
         """Add obstacles aligned with the Lemniscate path for ToF RL training."""
-        valid_obstacle_types = {"cubes", "moving_cubes", "donas", "map", "none"}
+        valid_obstacle_types = {"cubes", "moving_cubes", "donas", "map", "none", "powertrack"}
         if self.OBSTACLE_TYPE not in valid_obstacle_types:
             raise ValueError(
                 f"OBSTACLE_TYPE debe ser uno de: {sorted(valid_obstacle_types)}"
@@ -216,32 +234,35 @@ class BaseRLAviary(BaseAviary):
                     # Las donas solo se usan con cubos estáticos.
                 if self.OBSTACLE_TYPE == "donas":
                     self.dona_ids = self.generar_5_donas(radio_int_min=0.7)
-        else:
-                # # Tu código previo para cargar la malla del mapa .obj
-                # visual_id = p.createVisualShape(
-                #     shapeType=p.GEOM_MESH,
-                #     fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
-                #     meshScale=[4, 4, 4],
-                #     physicsClientId=self.CLIENT
-                # )
+        elif self.OBSTACLE_TYPE == "map":
+                # Tu código previo para cargar la malla del mapa .obj
+                visual_id = p.createVisualShape(
+                    shapeType=p.GEOM_MESH,
+                    fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
+                    meshScale=[4, 4, 4],
+                    physicsClientId=self.CLIENT
+                )
 
-                # collision_id = p.createCollisionShape(
-                #     shapeType=p.GEOM_MESH,
-                #     fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
-                #     meshScale=[4, 4, 4],
-                #     flags=p.GEOM_FORCE_CONCAVE_TRIMESH,
-                #     physicsClientId=self.CLIENT
-                # )
+                collision_id = p.createCollisionShape(
+                    shapeType=p.GEOM_MESH,
+                    fileName=pkg_resources.resource_filename('gym_pybullet_drones', 'assets/map.obj'),
+                    meshScale=[4, 4, 4],
+                    flags=p.GEOM_FORCE_CONCAVE_TRIMESH,
+                    physicsClientId=self.CLIENT
+                )
 
-                # self.map_id = p.createMultiBody(
-                #     baseMass=0,
-                #     baseCollisionShapeIndex=collision_id,
-                #     baseVisualShapeIndex=visual_id,
-                #     basePosition=[4 * 4.5, 4 * 4.5, 0.01],
-                #     baseOrientation=p.getQuaternionFromEuler([0, 0, 0]),
-                #     physicsClientId=self.CLIENT
-                # )
-            pass
+                self.map_id = p.createMultiBody(
+                    baseMass=0,
+                    baseCollisionShapeIndex=collision_id,
+                    baseVisualShapeIndex=visual_id,
+                    basePosition=[4 * 4.5, 4 * 4.5, 0.01],
+                    baseOrientation=p.getQuaternionFromEuler([0, 0, 0]),
+                    physicsClientId=self.CLIENT
+                )
+                
+        elif self.OBSTACLE_TYPE == "powertrack":
+            track = PowerloopTrack( show_labels=True ) 
+            track.create()
 
     def _updateMovingObstacles(self, dt):
         """Move cube obstacles smoothly inside their configured motion margins."""
@@ -593,13 +614,7 @@ class BaseRLAviary(BaseAviary):
 
 
     def _computeObs(self):
-        """Returns the current observation of the environment.
-
-        Returns
-        -------
-        ndarray
-            A Box() of shape (NUM_DRONES,H,W,4) or (NUM_DRONES,14) depending on the observation type.
-        """
+        """Returns the current observation of the environment."""
         if self.OBS_TYPE == ObservationType.RGB:
             if self.step_counter % self.IMG_CAPTURE_FREQ == 0:
                 for i in range(self.NUM_DRONES):
@@ -616,19 +631,23 @@ class BaseRLAviary(BaseAviary):
         elif self.OBS_TYPE == ObservationType.KIN:
             obs_14 = np.zeros((self.NUM_DRONES, 14))
             
+            # --- 1. LECTURA Y RUIDO EN LIDAR (Medición Local) ---
+            current_lidar = self.lidar.copy()
+            if getattr(self, 'enable_noise', False) and hasattr(self, 'noise_model'):
+                current_lidar = self.noise_model.apply_laser_noise(current_lidar)
+
             for i in range(self.NUM_DRONES):
                 obs = self._getDroneStateVector(i)
-                # --- Guardar Yaw de inicio (poner antes del loop de drones o dentro de 'if self.step_counter == 0') ---
-                
-                
-                # 1. Orientación Global (Cuaternión de PyBullet: [x, y, z, w])
+
+                # Estado exacto/ideal del simulador
                 quat_world = obs[3:7]
                 current_v_global = obs[10:13]
+                ang_vel_global = obs[13:16]
 
-                # 2. Matriz de Rotación Body -> World
+                # Matriz de Rotación ideal para la proyección a Marco Local
                 rot_matrix = np.array(p.getMatrixFromQuaternion(quat_world)).reshape(3, 3)
 
-                # 3. Calcular Vector de Posición Relativa al Objetivo
+                # Dirección e inclinación al objetivo (Geometría Global Ideal)
                 if hasattr(self, 'TARGET_POS'):
                     if self.NUM_DRONES == 1:
                         delta_pos = self.TARGET_POS - obs[0:3]
@@ -639,105 +658,89 @@ class BaseRLAviary(BaseAviary):
 
                 dist_total = np.linalg.norm(delta_pos)
 
-                # 4. Vector unitario hacia el objetivo en marco GLOBAL
-                d_min = 0.05  # Zona muerta de 5 cm
+                d_min = 0.05
                 if dist_total < d_min:
                     u_unit_global = np.zeros(3)
                 else:
                     u_unit_global = delta_pos / dist_total
 
-
-                # Eliminar ruido horizontal si el movimiento es puramente en Z
                 if np.linalg.norm(u_unit_global[:2]) < 0.08:
                     u_unit_global[0] = 0.0
                     u_unit_global[1] = 0.0
                     u_unit_global[2] = np.sign(u_unit_global[2])
-                # --- TRANSFORMACIONES A MARCO LOCAL (BODY FRAME) ---
-                
-                # A. Dirección al objetivo en marco LOCAL
+
+                # --- TRANSFORMACIONES A MARCO LOCAL IDEAL ---
                 u_unit_local = rot_matrix.T @ u_unit_global
-
-                # B. Velocidad lineal en marco LOCAL (Avanzar, Lateral, Vertical)
                 current_v_local = rot_matrix.T @ current_v_global
+                vel_angle_local = rot_matrix.T @ ang_vel_global
 
-                # C. CUATERNIÓN LOCAL (Invariante al Yaw del Mapa)
-                # Extraer Euler global
+                # Cuaternión Local ideal
                 r_world = R.from_quat(quat_world)
                 _, _, yaw = r_world.as_euler('xyz')
-                if not hasattr(self, 'initial_yaws') or self.step_counter == 0:
-                                    self.initial_yaws = [R.from_quat(self._getDroneStateVector(j)[3:7]).as_euler('xyz')[2] for j in range(self.NUM_DRONES)]
                 
-                # --- Dentro del loop 'for i in range(self.NUM_DRONES):' ---
-                yaw_inc_deg = np.degrees(np.arctan2(np.sin(yaw - self.initial_yaws[i]), np.cos(yaw - self.initial_yaws[i])))
+                if not hasattr(self, 'initial_yaws') or self.step_counter == 0:
+                    self.initial_yaws = [
+                        R.from_quat(self._getDroneStateVector(j)[3:7]).as_euler('xyz')[2] 
+                        for j in range(self.NUM_DRONES)
+                    ]
 
-                # --- Print a añadir ---
-                #print(f"Yaw Incremental (Spawn): {yaw_inc_deg:.2f}°")
-                # Inverso del Yaw absoluto (para 'cancelar' la rotación de brújula)
                 q_yaw_inv = R.from_euler('z', -yaw)
+                q_local = (q_yaw_inv * r_world).as_quat()
 
-                # Cuaternión local (solo contiene Roll y Pitch)
-                q_local = (q_yaw_inv * r_world).as_quat()  # Retorna [x, y, z, w]
-
-                # Corrección de "Sign Flip" (Asegurar continuidad de q == -q en RL)
-                # Mantiene el escalar w siempre positivo
                 if q_local[3] < 0:
                     q_local = -q_local
 
-                # D. Distancia escalar normalizada [0, 1)
                 S = 5.0
                 d_norm = np.tanh(dist_total / S)
 
-                # E. Velocidades Angulares en el marco LOCAL del dron.
-                # PyBullet devuelve la velocidad angular en coordenadas globales,
-                # por lo que la transformamos al frame del cuerpo usando la
-                # rotación actual del dron para que el valor sea invariante a
-                # la orientación inicial del drone.
-                ang_vel_global = obs[13:16]
-                vel_angle_local = rot_matrix.T @ ang_vel_global
+                # ============================================================
+                # APLICACIÓN DE RUIDO A LAS MEDICIONES LOCALES
+                # ============================================================
+                if getattr(self, 'enable_noise', False) and hasattr(self, 'noise_model'):
+                    # 1. Ruido en Odometría/Estimación de Posición Local y Velocidad Lineal Local
+                    u_unit_local, current_v_local = self.noise_model.apply_odometry_noise(
+                        u_unit_local, current_v_local
+                    )
+                    
+                    # Re-normalizar el vector unitario de dirección local tras agregar ruido
+                    u_norm = np.linalg.norm(u_unit_local)
+                    if u_norm > 1e-6:
+                        u_unit_local = u_unit_local / u_norm
 
-                # --- IMPRESIONES DE VERIFICACIÓN DE ESTADO LOCAL ---
-                azimuth_local_deg = np.degrees(np.arctan2(u_unit_local[1], u_unit_local[0]))
-                elevation_local_deg = np.degrees(np.arcsin(np.clip(u_unit_local[2], -1.0, 1.0)))
+                    # 2. Ruido IMU sobre las velocidades angulares locales
+                    _, vel_angle_local, _ = self.noise_model.apply_imu_noise(
+                        acc=np.zeros(3),
+                        gyro=vel_angle_local,
+                        angles=None
+                    )
 
-                # print(f"\n--- [DRONE {i}] ESTADO LOCAL ---")
-                # print(f"Distancia Real:         {dist_total:.3f} m")
-                # print(f"u_unit_local:           [{u_unit_local[0]:.3f}, {u_unit_local[1]:.3f}, {u_unit_local[2]:.3f}]")
-                # print(f"Azimut Local (Objetivo):{azimuth_local_deg:.2f}°")
-                # print(f"Elevación Local:        {elevation_local_deg:.2f}°")
-                # print(f"Yaw Incremental (Spawn):{yaw_inc_deg:.2f}°")  # <-- NUEVO PRINT
-                # print(f"q_local [x,y,z,w]:      [{q_local[0]:.3f}, {q_local[1]:.3f}, {q_local[2]:.3f}, {q_local[3]:.3f}]")
-                # print(f"v_local [fwd,lat,ver]:  [{current_v_local[0]:.3f}, {current_v_local[1]:.3f}, {current_v_local[2]:.3f}] m/s")
-                # --- CONSTRUCCIÓN DEL VECTOR DE 14 ELEMENTOS LOCAL Y CONTINUO ---
-                # Indices:
-                # [0:3]   -> u_unit_local (Dirección al objetivo)
-                # [3]     -> d_norm (Distancia normalizada)
-                # [4:8]   -> q_local (Cuaternión de actitud local [x, y, z, w])
-                # [8:11]  -> current_v_local (Velocidad lineal local)
-                # [11:14] -> vel_angle_local (Velocidad angular local)
+                    # 3. Ruido en estimación del Cuaternión/Postura Local (Roll/Pitch)
+                    euler_local = R.from_quat(q_local).as_euler('xyz')
+                    _, _, euler_local = self.noise_model.apply_imu_noise(
+                        acc=np.zeros(3),
+                        gyro=np.zeros(3),
+                        angles=euler_local
+                    )
+                    q_local = R.from_euler('xyz', euler_local).as_quat()
+                    if q_local[3] < 0:
+                        q_local = -q_local
+
+                # --- CONSTRUCCIÓN DEL VECTOR DE 14 ELEMENTOS RUIDOSO Y LOCAL ---
                 obs_14[i, :] = np.hstack([
                     u_unit_local,      # 3
                     d_norm,            # 1
                     q_local,           # 4
                     current_v_local,   # 3
-                    vel_angle_local          # 3
+                    vel_angle_local    # 3
                 ]).reshape(14,)
-                
-                # print(
-                #     f"u_local={u_unit_local} | "
-                #     f"vel_global={current_v_global} | "
-                #     f"vel_local={current_v_local} | "
-                #     f"vel_angle_local={vel_angle_local} | "
-                # )
-
-
-            self.lidar_buffer.append(self.lidar.copy())
+            self.lidar_buffer.append(current_lidar.copy())
             
             ret = np.array([obs_14[i, :] for i in range(self.NUM_DRONES)]).astype('float32')
 
             # Agregar buffers de acción y LiDAR a la observación
             for i in range(self.ACTION_BUFFER_SIZE):
                 ret = np.hstack([ret, np.array([self.action_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
-                #print(f"Action Buffer {i}: {self.action_buffer[i]}")  # Imprime el contenido del buffer de acción
+                
             for i in range(self.LIDAR_BUFFER_SIZE):
                 ret = np.hstack([ret, np.array([self.lidar_buffer[i][j, :] for j in range(self.NUM_DRONES)])])
                 
