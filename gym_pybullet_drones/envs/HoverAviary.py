@@ -4,6 +4,7 @@ import pygame as pg
 import math
 from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, ObservationType
+from gym_pybullet_drones.utils.powerloop_track import PowerloopTrack
 import matplotlib.pyplot as plt
 
 class HoverAviary(BaseRLAviary):
@@ -11,7 +12,7 @@ class HoverAviary(BaseRLAviary):
     
     def __init__(self,
                  drone_model: DroneModel=DroneModel.CF2X250,
-                 initial_xyzs=np.array([[0, 0, np.random.uniform(0.8, 2.5)]]),
+                 initial_xyzs=np.array([[4, 4, 1]]),
                  initial_rpys=None,
                  physics: Physics=Physics.PYB,
                  pyb_freq: int = 240,
@@ -22,7 +23,7 @@ class HoverAviary(BaseRLAviary):
                  act: ActionType=ActionType.RPM,
                  random_targets: bool = False,
                  randomized = False,
-                 rabbit_mode = "keyboard" # "script" , "keyboard"
+                 rabbit_mode = None # "script" , "keyboard"
                  ):
         """Initialization of a single agent RL environment.
 
@@ -87,7 +88,7 @@ class HoverAviary(BaseRLAviary):
         self.rabbit_joystick = None
         
         if self.randomized :
-            initial_xyzs = np.array([[np.random.uniform(-0.8, 0.8),np.random.uniform(-0.8, 0.8), np.random.uniform(0.8, 1.5)]])
+            initial_xyzs = np.array([[np.random.uniform(-0.8, 0.8)+4,np.random.uniform(-0.8, 0.8)+4, np.random.uniform(0.8, 1.5)]])
 
 
             
@@ -128,6 +129,16 @@ class HoverAviary(BaseRLAviary):
         # Fase inicial: vuelo conservador
         self.max_action_delta = 0.05
         self.smooth_lambda = 0.20
+        self._prev_dist = None
+
+        # ============================================================
+        # POWERLOOP: estados para detectar cruce de puertas
+        # ============================================================
+        self._prev_gate_plane_dist = None
+        self._prev_gate_idx = None
+        self.race_finished = False
+
+        self.truncate_early = False
     
     ################################################################################
     def _draw_target_marker(self, color=[0, 1, 0]):
@@ -181,7 +192,7 @@ class HoverAviary(BaseRLAviary):
         self._probe_id = None
         self._probe_shape = None
         if self.randomized :
-            self.INIT_XYZS = np.array([[np.random.uniform(-0.8, 0.8),np.random.uniform(-0.8, 0.8), np.random.uniform(0.8, 1.5)]])
+            self.INIT_XYZS = np.array([[np.random.uniform(-0.8, 0.8) + 4,np.random.uniform(-0.8, 0.8) + 4, np.random.uniform(0.8, 1.5)]])
 
         # Habilitar orientación inicial aleatoria en Yaw
         if self.INIT_RPYS is not None :
@@ -314,38 +325,80 @@ class HoverAviary(BaseRLAviary):
 
             elif not self.one_only_target and not self.random_targets:
                 # Lista de trayectorias benchmark disponibles
-                benchmarks = [lemniscata_8, lemniscata_8_inv, lissajous_3d, spirograph_3d, helice_ascendente]
-                benchmark_names = ["Lemniscata 8", "Lemniscata 8 Invertida", "Lissajous 3D", "Spirograph 3D", "Helice ascendente", "Mapa por waypoints"]
-                #benchmarks = [lemniscata_8, lemniscata_8_inv]
-                #benchmark_names = ["Lemniscata 8", "Lemniscata 8 Invertida"]
                 
-                # Selección aleatoria o manual del test (0: Lemniscata, 1: Lissajous, 2: Spirograph, 3: Hélice, 4: Cuadrado)
-                self.task_idx = np.random.choice(len(benchmarks))
-                print("Benchmark seleccionado: ", benchmark_names[self.task_idx])
+                benchmark_names = [
+                                        "Powerloop 7 Gates"
+                                  ]
+
+                # ================================================================
+                # BENCHMARK POWERLOOP
+                # ================================================================
+
+                if benchmark_names[0] == "Powerloop 7 Gates":
+
+                    powerloop = PowerloopTrack()
+
+                    gate_data = powerloop.get_gate_data()
+
+                    self.gate_positions = np.array([
+                        gate["position"] for gate in gate_data
+                    ])
+
+                    self.gate_normals = np.array([
+                        gate["normal"] for gate in gate_data
+                    ])
+
+                    self.current_gate_idx = 0
+
+                    self.point_track = self.gate_positions.copy()
+
+                    self.pasos = len(self.point_track)
+
+                    self._draw_trajectory(self.point_track)
+
+                    self.TARGET_POS = self.gate_positions[0]
+
+                    
+                    print(
+                        f"Powerloop iniciado | "
+                        f"Gates: {len(self.gate_positions)}"
+                    )
+                else:
+
+                    benchmarks = [
+                        lemniscata_8,
+                        lemniscata_8_inv,
+                        lissajous_3d,
+                        spirograph_3d,
+                        helice_ascendente
+                    ]
+                    benchmark_names = ["Lemniscata 8", "Lemniscata 8 Invertida", "Lissajous 3D", "Spirograph 3D", "Helice ascendente"]
+                    self.task_idx = np.random.choice(len(benchmark_names))
+                    print("Benchmark seleccionado: ", benchmark_names[self.task_idx])
+                    
+                    # print("Direction ", self.task_idx )
+                    # Menos puntos para que los waypoints consecutivos queden más separados.
+                    if self.randomized:
+                        self.pasos = np.random.randint(50,60)
+                    else : 
+                        self.pasos = 50
+                    
+                    self.point_track = self.generar_trayectoria(
+                                                                benchmarks[self.task_idx],
+                                                                pasos=self.pasos
+                                                                )
+                    self.pasos = len(self.point_track)
+
+                    # print(self.point_track)
+                    # Dibujar TODA la trayectoria
+                    self._draw_trajectory(self.point_track)
+
+                    # Primer punto como objetivo actual
+                    self.TARGET_POS = self.point_track.pop(0)
+
+                    #self._draw_target_marker([0, 1, 0]) 
                 
-                # print("Direction ", self.task_idx )
-                # Menos puntos para que los waypoints consecutivos queden más separados.
-                if self.randomized:
-                    self.pasos = np.random.randint(50,60)
-                else : 
-                    self.pasos = 50
-                
-                self.point_track = self.generar_trayectoria(
-                                                            benchmarks[self.task_idx],
-                                                            pasos=self.pasos
-                                                            )
-                self.pasos = len(self.point_track)
-
-                # print(self.point_track)
-                # Dibujar TODA la trayectoria
-                self._draw_trajectory(self.point_track)
-
-                # Primer punto como objetivo actual
-                self.TARGET_POS = self.point_track.pop(0)
-
-                #self._draw_target_marker([0, 1, 0]) 
-            
-                print(f"Benchmark Activo: ID {self.task_idx} | Puntos Restantes: {len(self.point_track)}")
+                    print(f"Benchmark Activo: ID {self.task_idx} | Puntos Restantes: {len(self.point_track)}")
 
             elif self.one_only_target and not self.random_targets:
                 self.TARGET_POS = np.array([0.0, 0.0, 1.0])
@@ -515,7 +568,9 @@ class HoverAviary(BaseRLAviary):
 
         self.truncate_early = False
         self._update_rabbit_target()
+
         state = self._getDroneStateVector(0)
+
         pos = state[0:3]
         vel_global = state[10:13]
         ang_vel_global = state[13:16]
@@ -528,66 +583,306 @@ class HoverAviary(BaseRLAviary):
 
         vel = rotation_matrix.T @ vel_global
         ang_vel = rotation_matrix.T @ ang_vel_global
+
         roll, pitch = angles[0], angles[1]
 
+        # ============================================================
+        # DETECTAR SI ESTAMOS EN POWERLOOP
+        # ============================================================
+
+        is_powerloop = (
+            hasattr(self, "gate_positions")
+            and hasattr(self, "gate_normals")
+            and hasattr(self, "current_gate_idx")
+        )
+
+        # ============================================================
+        # TARGET
+        # ============================================================
+
         delta_pos = self.TARGET_POS - pos
-        dist = float(np.linalg.norm(delta_pos))
+
+        dist = float(
+            np.linalg.norm(delta_pos)
+        )
 
         if self._prev_dist is None:
             self._prev_dist = dist
 
         progress = self._prev_dist - dist
+
         self._prev_dist = dist
 
-        target_dir = delta_pos / (dist + 1e-8)
-        target_local = rotation_matrix.T @ target_dir
+        target_dir = (
+            delta_pos
+            / (dist + 1e-8)
+        )
+
+        target_local = (
+            rotation_matrix.T @ target_dir
+        )
 
         target_xy = target_local[:2]
-        target_xy_norm = np.linalg.norm(target_xy)
+
+        target_xy_norm = np.linalg.norm(
+            target_xy
+        )
 
         heading_alignment = 1.0
 
         if target_xy_norm > 1e-8:
-            target_xy = target_xy / target_xy_norm
+
+            target_xy = (
+                target_xy
+                / target_xy_norm
+            )
+
             heading_alignment = float(
-                np.dot(np.array([1.0, 0.0]), target_xy)
+                np.dot(
+                    np.array([1.0, 0.0]),
+                    target_xy
+                )
             )
 
         heading_alignment = float(
-            np.clip(heading_alignment, -1.0, 1.0)
+            np.clip(
+                heading_alignment,
+                -1.0,
+                1.0
+            )
         )
 
         forward_progress = float(
-            np.dot(vel[:2], target_xy)
+            np.dot(
+                vel[:2],
+                target_xy
+            )
         )
 
         forward_speed = float(
-            max(vel[0], 0.0)
+            max(
+                vel[0],
+                0.0
+            )
         )
 
         speed_magnitude = float(
-            np.linalg.norm(vel_global)
+            np.linalg.norm(
+                vel_global
+            )
         )
+
+        # ============================================================
+        # POWERLOOP: INFORMACIÓN DE LA PUERTA ACTUAL
+        # ============================================================
+
+        gate_forward_speed = 0.0
+        gate_direction_reward = 0.0
+        wrong_gate_direction_penalty = 0.0
+        gate_center_penalty = 0.0
+
+        gate_signed_dist = None
+        gate_inside = False
+
+        if is_powerloop:
+
+            gate_idx = self.current_gate_idx
+
+            if gate_idx < len(self.gate_positions):
+
+                gate_pos = np.asarray(
+                    self.gate_positions[gate_idx],
+                    dtype=np.float32
+                )
+
+                gate_normal_global = np.asarray(
+                    self.gate_normals[gate_idx],
+                    dtype=np.float32
+                )
+
+                gate_normal_norm = np.linalg.norm(
+                    gate_normal_global
+                )
+
+                if gate_normal_norm > 1e-6:
+                    gate_normal_global = (
+                        gate_normal_global
+                        / gate_normal_norm
+                    )
+
+                # ----------------------------------------------------
+                # Distancia firmada al plano de la puerta
+                # ----------------------------------------------------
+
+                gate_offset = pos - gate_pos
+
+                gate_signed_dist = float(
+                    np.dot(
+                        gate_offset,
+                        gate_normal_global
+                    )
+                )
+
+                # ----------------------------------------------------
+                # Velocidad atravesando la puerta
+                # ----------------------------------------------------
+
+                gate_forward_speed = float(
+                    np.dot(
+                        vel_global,
+                        gate_normal_global
+                    )
+                )
+
+                # ----------------------------------------------------
+                # Eje X local de la puerta
+                #
+                # La normal es el eje Y local:
+                # normal = [-sin(yaw), cos(yaw), 0]
+                #
+                # Por tanto:
+                # gate_x = [normal_y, -normal_x, 0]
+                # ----------------------------------------------------
+
+                gate_x_global = np.array([
+                    gate_normal_global[1],
+                    -gate_normal_global[0],
+                    0.0
+                ])
+
+                gate_x_norm = np.linalg.norm(
+                    gate_x_global
+                )
+
+                if gate_x_norm > 1e-6:
+                    gate_x_global /= gate_x_norm
+
+                # ----------------------------------------------------
+                # Posición respecto al centro de la puerta
+                # ----------------------------------------------------
+
+                lateral_offset = float(
+                    np.dot(
+                        gate_offset,
+                        gate_x_global
+                    )
+                )
+
+                vertical_offset = float(
+                    gate_offset[2]
+                )
+
+                # ----------------------------------------------------
+                # Apertura útil
+                #
+                # Gate = 1 x 1 m
+                # Dejamos un pequeño margen de seguridad.
+                # ----------------------------------------------------
+
+                gate_half_size = 0.45
+
+                gate_inside = (
+                    abs(lateral_offset)
+                    <= gate_half_size
+                    and
+                    abs(vertical_offset)
+                    <= gate_half_size
+                )
+
+                # ----------------------------------------------------
+                # RECOMPENSA POR AVANZAR EN LA DIRECCIÓN DE LA PUERTA
+                #
+                # Solo pesa mucho cuando estamos cerca de ella.
+                # ----------------------------------------------------
+
+                near_gate_factor = float(
+                    np.exp(
+                        -dist / 2.0
+                    )
+                )
+
+                gate_direction_reward = (
+                    1.5
+                    * near_gate_factor
+                    * np.clip(
+                        gate_forward_speed / 3.0,
+                        0.0,
+                        1.0
+                    )
+                )
+
+                # ----------------------------------------------------
+                # PENALIZACIÓN POR IR EN SENTIDO CONTRARIO
+                # ----------------------------------------------------
+
+                wrong_gate_direction_penalty = (
+                    -1.5
+                    * near_gate_factor
+                    * np.clip(
+                        -gate_forward_speed / 2.0,
+                        0.0,
+                        1.0
+                    )
+                )
+
+                # ----------------------------------------------------
+                # PENALIZACIÓN POR NO PASAR POR EL CENTRO
+                #
+                # Solo aparece cerca de la puerta.
+                # ----------------------------------------------------
+
+                lateral_norm = (
+                    lateral_offset
+                    / gate_half_size
+                )
+
+                vertical_norm = (
+                    vertical_offset
+                    / gate_half_size
+                )
+
+                gate_center_error = (
+                    lateral_norm ** 2
+                    + vertical_norm ** 2
+                )
+
+                gate_center_penalty = (
+                    -0.5
+                    * near_gate_factor
+                    * min(
+                        gate_center_error,
+                        2.0
+                    )
+                )
 
         # ============================================================
         # GUÍA DE OBSTÁCULOS
         # ============================================================
 
-        obstacle_risk, safer_side = self._get_obstacle_guidance(vel)
+        obstacle_risk, safer_side = (
+            self._get_obstacle_guidance(vel)
+        )
 
-        collision_penalty = -2.5 * obstacle_risk
+        collision_penalty = (
+            -2.5
+            * obstacle_risk
+        )
 
         if obstacle_risk > 0.35:
             collision_penalty -= (
                 4.0
-                * (obstacle_risk - 0.35)
+                * (
+                    obstacle_risk - 0.35
+                )
                 / 0.65
             )
 
         if obstacle_risk > 0.75:
             collision_penalty -= (
                 4.0
-                * (obstacle_risk - 0.75)
+                * (
+                    obstacle_risk - 0.75
+                )
                 / 0.25
             )
 
@@ -602,10 +897,16 @@ class HoverAviary(BaseRLAviary):
         braking_penalty = (
             -3.0
             * obstacle_risk
-            * max(forward_speed - 0.35, 0.0)
+            * max(
+                forward_speed - 0.35,
+                0.0
+            )
         )
 
-        safe_lateral_speed = safer_side * vel[1]
+        safe_lateral_speed = (
+            safer_side
+            * vel[1]
+        )
 
         avoidance_reward = (
             2.5
@@ -628,19 +929,30 @@ class HoverAviary(BaseRLAviary):
         )
 
         # ============================================================
-        # CONTROL DE VELOCIDAD MÁXIMA
+        # CONTROL DE VELOCIDAD
         # ============================================================
 
-        target_speed_limit = 1.2
+        if is_powerloop:
+
+            # En carrera permitimos bastante más velocidad
+            target_speed_limit = 3.0
+
+        else:
+
+            # Mantener exactamente el benchmark anterior
+            target_speed_limit = 1.2
 
         excess_speed = max(
             0.0,
-            speed_magnitude - target_speed_limit
+            speed_magnitude
+            - target_speed_limit
         )
 
         excess_speed_penalty = (
             -1.5
-            * (excess_speed ** 2)
+            * (
+                excess_speed ** 2
+            )
         )
 
         # ============================================================
@@ -649,47 +961,183 @@ class HoverAviary(BaseRLAviary):
 
         base_reward = 0.0
 
-        approach_reward = (
-            5.0
-            * max(progress, 0.0)
-            * (1.0 - 0.65 * obstacle_risk)
-        )
+        if is_powerloop:
 
-        no_approach_penalty = 0.0
+            # ========================================================
+            # PROGRESO HACIA LA PUERTA
+            # ========================================================
 
-        if progress <= 0.0 and dist > 0.8:
-            no_approach_penalty -= (
-                1.5
+            approach_reward = (
+                8.0
+                * max(
+                    progress,
+                    0.0
+                )
                 * (
                     1.0
-                    + min(dist, 8.0) / 8.0
+                    - 0.50 * obstacle_risk
                 )
             )
 
-        if forward_progress < 0.05 and dist > 1.0:
-            no_approach_penalty -= 0.5
+            # ========================================================
+            # EVITAR QUEDARSE CERCA DE UNA PUERTA
+            # ========================================================
 
-        if heading_alignment < 0.2 and dist > 1.0:
-            no_approach_penalty -= 0.2
+            no_approach_penalty = 0.0
 
-        heading_reward = (
-            1.2
-            * max(heading_alignment, 0.0)
-            * max(0.0, 1.0 - dist / 8.0)
-        )
+            if (
+                progress <= 0.0
+                and dist > 1.0
+            ):
 
-        speed_reward = (
-            0.4
-            * max(forward_progress, 0.0)
-            * max(0.0, 1.0 - dist / 6.0)
-        )
+                no_approach_penalty -= (
+                    0.8
+                    * (
+                        1.0
+                        + min(
+                            dist,
+                            8.0
+                        ) / 8.0
+                    )
+                )
 
-        reverse_penalty = (
-            -0.8
-            * min(forward_progress, 0.0)
-        )
+            if (
+                forward_progress < 0.05
+                and dist > 1.0
+            ):
 
-        time_penalty = -0.045
+                no_approach_penalty -= 0.3
+
+            # ========================================================
+            # ORIENTACIÓN HACIA LA SIGUIENTE PUERTA
+            # ========================================================
+
+            heading_reward = (
+                0.8
+                * max(
+                    heading_alignment,
+                    0.0
+                )
+                * max(
+                    0.0,
+                    1.0 - dist / 8.0
+                )
+            )
+
+            # ========================================================
+            # VELOCIDAD DE CARRERA
+            #
+            # Solo se recompensa velocidad cuando realmente está
+            # contribuyendo a avanzar hacia la puerta.
+            # ========================================================
+
+            speed_reward = (
+                0.8
+                * np.clip(
+                    forward_progress / 3.0,
+                    0.0,
+                    1.0
+                )
+                * max(
+                    heading_alignment,
+                    0.0
+                )
+            )
+
+            reverse_penalty = (
+                -1.0
+                * min(
+                    forward_progress,
+                    0.0
+                )
+            )
+
+            # En carrera el tiempo importa un poco más
+            time_penalty = -0.06
+
+        else:
+
+            # ========================================================
+            # REWARD ORIGINAL DE LOS OTROS BENCHMARKS
+            # ========================================================
+
+            approach_reward = (
+                5.0
+                * max(
+                    progress,
+                    0.0
+                )
+                * (
+                    1.0
+                    - 0.65 * obstacle_risk
+                )
+            )
+
+            no_approach_penalty = 0.0
+
+            if (
+                progress <= 0.0
+                and dist > 0.8
+            ):
+
+                no_approach_penalty -= (
+                    1.5
+                    * (
+                        1.0
+                        + min(
+                            dist,
+                            8.0
+                        ) / 8.0
+                    )
+                )
+
+            if (
+                forward_progress < 0.05
+                and dist > 1.0
+            ):
+
+                no_approach_penalty -= 0.5
+
+            if (
+                heading_alignment < 0.2
+                and dist > 1.0
+            ):
+
+                no_approach_penalty -= 0.2
+
+            heading_reward = (
+                1.2
+                * max(
+                    heading_alignment,
+                    0.0
+                )
+                * max(
+                    0.0,
+                    1.0 - dist / 8.0
+                )
+            )
+
+            speed_reward = (
+                0.4
+                * max(
+                    forward_progress,
+                    0.0
+                )
+                * max(
+                    0.0,
+                    1.0 - dist / 6.0
+                )
+            )
+
+            reverse_penalty = (
+                -0.8
+                * min(
+                    forward_progress,
+                    0.0
+                )
+            )
+
+            time_penalty = -0.045
 
         # ============================================================
         # INICIALIZACIÓN DE ESTADOS PREVIOS
@@ -703,28 +1151,39 @@ class HoverAviary(BaseRLAviary):
         if (
             not hasattr(self, "_prev_action")
             or self._prev_action is None
-            or self._prev_action.shape != action_now.shape
+            or self._prev_action.shape
+            != action_now.shape
         ):
-            self._prev_action = action_now.copy()
+            self._prev_action = (
+                action_now.copy()
+            )
 
         if (
             not hasattr(self, "_prev_ang_vel")
             or self._prev_ang_vel is None
-            or self._prev_ang_vel.shape != ang_vel.shape
+            or self._prev_ang_vel.shape
+            != ang_vel.shape
         ):
-            self._prev_ang_vel = ang_vel.copy()
+            self._prev_ang_vel = (
+                ang_vel.copy()
+            )
 
         # ============================================================
         # 1. SUAVIDAD DE ACCIÓN
         # ============================================================
 
         action_delta = (
-            action_now - self._prev_action
+            action_now
+            - self._prev_action
         )
 
         action_change_penalty = (
             -0.25
-            * float(np.mean(action_delta ** 2))
+            * float(
+                np.mean(
+                    action_delta ** 2
+                )
+            )
         )
 
         action_change_penalty = float(
@@ -736,17 +1195,20 @@ class HoverAviary(BaseRLAviary):
         )
 
         # ============================================================
-        # 2. TEMBLORES / CAMBIOS BRUSCOS DE VELOCIDAD ANGULAR
+        # 2. CAMBIOS BRUSCOS DE VELOCIDAD ANGULAR
         # ============================================================
 
         angular_delta = (
-            ang_vel - self._prev_ang_vel
+            ang_vel
+            - self._prev_ang_vel
         )
 
         jitter_penalty = (
             -0.20
             * float(
-                np.sum(angular_delta[:2] ** 2)
+                np.sum(
+                    angular_delta[:2] ** 2
+                )
             )
         )
 
@@ -765,7 +1227,9 @@ class HoverAviary(BaseRLAviary):
         ang_vel_penalty = (
             -0.15
             * float(
-                np.linalg.norm(ang_vel[:2])
+                np.linalg.norm(
+                    ang_vel[:2]
+                )
             )
         )
 
@@ -781,15 +1245,19 @@ class HoverAviary(BaseRLAviary):
         # 4. MANTENER HORIZONTE
         # ============================================================
 
-        horizon_limit = np.deg2rad(10.0)
+        horizon_limit = np.deg2rad(
+            10.0
+        )
 
         excess_roll = max(
-            abs(roll) - horizon_limit,
+            abs(roll)
+            - horizon_limit,
             0.0
         )
 
         excess_pitch = max(
-            abs(pitch) - horizon_limit,
+            abs(pitch)
+            - horizon_limit,
             0.0
         )
 
@@ -814,7 +1282,8 @@ class HoverAviary(BaseRLAviary):
         # ============================================================
 
         attitude_error = np.sqrt(
-            roll ** 2 + pitch ** 2
+            roll ** 2
+            + pitch ** 2
         )
 
         angular_activity = np.linalg.norm(
@@ -831,9 +1300,14 @@ class HoverAviary(BaseRLAviary):
             )
         )
 
-        # Guardar estados para el siguiente paso
-        self._prev_action = action_now.copy()
-        self._prev_ang_vel = ang_vel.copy()
+        # Guardar estados
+        self._prev_action = (
+            action_now.copy()
+        )
+
+        self._prev_ang_vel = (
+            ang_vel.copy()
+        )
 
         # ============================================================
         # REWARD TOTAL
@@ -860,52 +1334,246 @@ class HoverAviary(BaseRLAviary):
         )
 
         # ============================================================
-        # WAYPOINT
+        # RECOMPENSAS ESPECÍFICAS DE POWERLOOP
+        # ============================================================
+
+        if is_powerloop:
+
+            total_reward += (
+                gate_direction_reward
+                + wrong_gate_direction_penalty
+                + gate_center_penalty
+            )
+
+        # ============================================================
+        # PASO DE PUERTA / WAYPOINT
         # ============================================================
 
         bonus = 0.0
 
-        if dist < 1.0 and speed_magnitude < 2.0:
+        if is_powerloop:
 
-            bonus = 20.0
-            self.score += 1
+            gate_idx = (
+                self.current_gate_idx
+            )
 
-            if (
-                not self.one_only_target
-                and getattr(
-                    self,
-                    "point_track",
-                    None
-                ) is not None
-                and len(self.point_track) > 0
+            # --------------------------------------------------------
+            # Si todavía quedan puertas
+            # --------------------------------------------------------
+
+            if gate_idx < len(
+                self.gate_positions
             ):
 
-                self.TARGET_POS = (
-                    self.point_track.pop(0)
+                gate_position = np.asarray(
+                    self.gate_positions[
+                        gate_idx
+                    ],
+                    dtype=np.float32
                 )
 
-                self._draw_target_marker(
-                    [0, 1, 0]
+                gate_normal = np.asarray(
+                    self.gate_normals[
+                        gate_idx
+                    ],
+                    dtype=np.float32
                 )
 
-            self._prev_dist = None
+                gate_normal_norm = np.linalg.norm(
+                    gate_normal
+                )
+
+                if gate_normal_norm > 1e-6:
+                    gate_normal /= gate_normal_norm
+
+                # ----------------------------------------------------
+                # Distancia firmada al plano actual
+                # ----------------------------------------------------
+
+                current_gate_plane_dist = float(
+                    np.dot(
+                        pos - gate_position,
+                        gate_normal
+                    )
+                )
+
+                # ----------------------------------------------------
+                # Inicialización / cambio de puerta
+                # ----------------------------------------------------
+
+                if (
+                    self._prev_gate_idx
+                    != gate_idx
+                ):
+
+                    self._prev_gate_idx = (
+                        gate_idx
+                    )
+
+                    self._prev_gate_plane_dist = (
+                        current_gate_plane_dist
+                    )
+
+                previous_gate_plane_dist = (
+                    self._prev_gate_plane_dist
+                )
+
+                # ----------------------------------------------------
+                # CRUCE REAL DE LA PUERTA
+                #
+                # Antes:
+                #   lado positivo
+                #
+                # Ahora:
+                #   lado negativo
+                #
+                # Esto obliga a cruzarla en el sentido de la normal.
+                # ----------------------------------------------------
+
+                crossed_gate = (
+                    previous_gate_plane_dist > 0.0
+                    and
+                    current_gate_plane_dist <= 0.0
+                    and
+                    gate_inside
+                    and
+                    gate_forward_speed > 0.1
+                )
+
+                # Guardar para el siguiente paso
+                self._prev_gate_plane_dist = (
+                    current_gate_plane_dist
+                )
+
+                # ----------------------------------------------------
+                # GATE COMPLETADA
+                # ----------------------------------------------------
+
+                if crossed_gate:
+
+                    # Bonus base por cruzar
+                    gate_speed_factor = float(
+                        np.clip(
+                            gate_forward_speed / 3.0,
+                            0.0,
+                            1.0
+                        )
+                    )
+
+                    bonus = (
+                        40.0
+                        + 10.0
+                        * gate_speed_factor
+                    )
+
+                    self.score += 1
+
+                    # Siguiente puerta
+                    self.current_gate_idx += 1
+
+                    # ------------------------------------------------
+                    # TODAVÍA QUEDAN PUERTAS
+                    # ------------------------------------------------
+
+                    if (
+                        self.current_gate_idx
+                        < len(
+                            self.gate_positions
+                        )
+                    ):
+
+                        self.TARGET_POS = (
+                            self.gate_positions[
+                                self.current_gate_idx
+                            ]
+                        )
+
+                        self._prev_dist = None
+
+                        # Fuerza a reinicializar el plano
+                        # con la nueva puerta en el siguiente paso
+                        self._prev_gate_idx = None
+                        self._prev_gate_plane_dist = None
+
+                    # ------------------------------------------------
+                    # TERMINÓ TODO EL CIRCUITO
+                    # ------------------------------------------------
+
+                    else:
+
+                        self.race_finished = True
+
+                        self.truncate_early = True
+
+                        # Bonus adicional por terminar
+                        bonus += 100.0
+
+                        self._prev_dist = None
+
+            else:
+
+                self.race_finished = True
+                self.truncate_early = True
+
+        else:
+
+            # ========================================================
+            # WAYPOINT ORIGINAL DE LOS OTROS BENCHMARKS
+            # ========================================================
+
+            if (
+                dist < 1.0
+                and speed_magnitude < 2.0
+            ):
+
+                bonus = 20.0
+
+                self.score += 1
+
+                if (
+                    not self.one_only_target
+                    and getattr(
+                        self,
+                        "point_track",
+                        None
+                    ) is not None
+                    and len(
+                        self.point_track
+                    ) > 0
+                ):
+
+                    self.TARGET_POS = (
+                        self.point_track.pop(0)
+                    )
+
+                    self._draw_target_marker(
+                        [0, 1, 0]
+                    )
+
+                self._prev_dist = None
 
         # ============================================================
         # FINAL DE LA TRAYECTORIA
+        #
+        # SOLO PARA OTROS BENCHMARKS
         # ============================================================
 
         if (
-            self.point_track is not None
+            not is_powerloop
+            and self.point_track is not None
             and not self.point_track
             and not self.one_only_target
         ):
 
             self.truncate_early = True
+
             bonus += 30.0
 
         total_reward += bonus
 
-        self.actual_reward += total_reward
+        self.actual_reward += (
+            total_reward
+        )
 
         return total_reward
         

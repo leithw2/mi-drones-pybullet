@@ -1,5 +1,6 @@
 import pybullet as p
 import math
+import numpy as np
 
 
 class PowerloopTrack:
@@ -22,7 +23,7 @@ class PowerloopTrack:
         (-1.500,   3.500,   2.00,    math.pi / 4, "Gate 1"),
         (-0.625,   0.000,   0.75,    math.pi / 2, "Gate 2"),
         ( 0.625,   0.000,   0.75,    math.pi / 2, "Gate 3"),
-        (-1.500,  -3.500,   2.00,   3 * math.pi / 4, "Gate 4"),
+        (-1.500,  -3.500,   2.00,    3 * math.pi / 4, "Gate 4"),
         ( 2.000,  -3.500,   0.75,   -math.pi / 2, "Gate 5"),
         ( 0.625,   0.000,   0.75,   -math.pi / 2, "Gate 6"),
     ]
@@ -179,3 +180,23 @@ class PowerloopTrack:
         """
 
         return cls.GATES.copy()
+    @classmethod
+    def get_gate_data(cls):
+        gate_data = []
+
+        for x, y, z, yaw, name in cls.GATES:
+
+            normal = np.array([
+                -math.sin(yaw),
+                math.cos(yaw),
+                0.0
+            ], dtype=np.float32)
+
+            gate_data.append({
+                "position": np.array([x, y, z], dtype=np.float32),
+                "normal": normal,
+                "yaw": yaw,
+                "name": name
+            })
+
+        return gate_data

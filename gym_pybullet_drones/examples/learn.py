@@ -70,9 +70,9 @@ DEFAULT_MA = False
 physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
 # Start a fresh policy after changing the obstacle reward. Set this to a model
 # folder only when intentionally fine-tuning an existing policy.
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'motores_250g_09.24.2026_16.03.21')
-# CONTINUE_FROM = None
-RANDOM_TARGETS=False # True or False
+#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'motores_250g_09.24.2026_16.03.21')
+CONTINUE_FROM = None
+RANDOM_TARGETS= False # True or False
 
 
 import numpy as np
@@ -131,7 +131,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'motores_250g_'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'Race'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
