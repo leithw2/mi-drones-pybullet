@@ -266,7 +266,21 @@ class BaseAviary(gym.Env):
 
         """
 
-        # TODO : initialize random number generator with seed
+        obstacle_body_ids = self._get_registered_obstacle_body_ids()
+        if obstacle_body_ids:
+            active_body_ids = {
+                p.getBodyUniqueId(index, physicsClientId=self.CLIENT)
+                for index in range(p.getNumBodies(physicsClientId=self.CLIENT))
+            }
+            if obstacle_body_ids.issubset(active_body_ids):
+                return self.reset_preserving_bodies(
+                    seed=seed,
+                    preserved_body_ids=obstacle_body_ids,
+                )
+
+        super().reset(seed=seed)
+        self.step_count = 0
+        self.wind_force = np.zeros(3)
 
         p.resetSimulation(physicsClientId=self.CLIENT)
         #### Housekeeping ##########################################
@@ -280,6 +294,99 @@ class BaseAviary(gym.Env):
         initial_obs = self._computeObs()
         initial_info = self._computeInfo()
         return initial_obs, initial_info
+
+    def _get_registered_obstacle_body_ids(self):
+        """Return obstacle body IDs registered by the RL environment."""
+        body_ids = set()
+        cubes = getattr(self, "cubo_id", ())
+        if isinstance(cubes, dict):
+            body_ids.update(int(body_id) for body_id in cubes.values())
+        else:
+            body_ids.update(
+                int(body_id) for body_id in cubes if body_id is not None
+            )
+        body_ids.update(
+            int(body_id)
+            for body_id in getattr(self, "dona_ids", ())
+            if body_id is not None
+        )
+        map_id = getattr(self, "map_id", None)
+        if map_id is not None:
+            body_ids.add(int(map_id))
+        return body_ids
+
+    def reset_preserving_bodies(self, seed=None, preserved_body_ids=()):
+        """Reset an episode while keeping selected static PyBullet bodies."""
+        super().reset(seed=seed)
+        self.step_count = 0
+        self.wind_force = np.zeros(3)
+
+        preserved_body_ids = {int(body_id) for body_id in preserved_body_ids}
+        preserved_body_ids.update(int(body_id) for body_id in self.DRONE_IDS)
+        preserved_body_ids.add(int(self.PLANE_ID))
+        test_body_id = getattr(self, "TEST_BODY_ID", None)
+        if test_body_id is not None:
+            preserved_body_ids.add(int(test_body_id))
+        preserved_body_ids.update(self._get_registered_obstacle_body_ids())
+
+        body_ids = [
+            p.getBodyUniqueId(index, physicsClientId=self.CLIENT)
+            for index in range(p.getNumBodies(physicsClientId=self.CLIENT))
+        ]
+        for body_id in body_ids:
+            if body_id not in preserved_body_ids:
+                p.removeBody(body_id, physicsClientId=self.CLIENT)
+
+        self._housekeeping(
+            preserve_debug_items=True,
+            preserve_sim_bodies=True,
+        )
+        for drone_index, drone_id in enumerate(self.DRONE_IDS):
+            p.resetBasePositionAndOrientation(
+                int(drone_id),
+                self.INIT_XYZS[drone_index],
+                p.getQuaternionFromEuler(self.INIT_RPYS[drone_index]),
+                physicsClientId=self.CLIENT,
+            )
+            p.resetBaseVelocity(
+                int(drone_id),
+                linearVelocity=[0, 0, 0],
+                angularVelocity=[0, 0, 0],
+                physicsClientId=self.CLIENT,
+            )
+        if test_body_id is not None:
+            p.resetBasePositionAndOrientation(
+                int(test_body_id),
+                [0, 0, -10],
+                [0, 0, 0, 1],
+                physicsClientId=self.CLIENT,
+            )
+        if getattr(self, "OBSTACLE_TYPE", None) == "moving_cubes":
+            self.moving_obstacle_time = 0.0
+            for index, obstacle_id in enumerate(
+                getattr(self, "cubo_id", {}).values()
+            ):
+                p.resetBasePositionAndOrientation(
+                    int(obstacle_id),
+                    self.moving_obstacle_centers[index],
+                    [0, 0, 0, 1],
+                    physicsClientId=self.CLIENT,
+                )
+                p.resetBaseVelocity(
+                    int(obstacle_id),
+                    [0, 0, 0],
+                    [0, 0, 0],
+                    physicsClientId=self.CLIENT,
+                )
+        self._updateAndStoreKinematicInformation()
+        self.obstacle_collision = self._checkObstacleCollision()
+        self._suppress_lidar_debug = True
+        try:
+            self.lidar = np.tile(self._update_lidar(), (self.NUM_DRONES, 1))
+        finally:
+            self._suppress_lidar_debug = False
+        self._startVideoRecording()
+        return self._computeObs(), self._computeInfo()
     
     ################################################################################
     def update_fpv_gui_camera(self, drone_id=0, offset_forward=-0.15):
@@ -512,7 +619,7 @@ class BaseAviary(gym.Env):
     
     ################################################################################
 
-    def _housekeeping(self):
+    def _housekeeping(self, preserve_debug_items=False, preserve_sim_bodies=False):
         """Housekeeping function.
 
         Allocation and zero-ing of the variables and PyBullet's parameters/objects
@@ -555,14 +662,15 @@ class BaseAviary(gym.Env):
         p.setTimeStep(self.PYB_TIMESTEP, physicsClientId=self.CLIENT)
         p.setAdditionalSearchPath(pybullet_data.getDataPath(), physicsClientId=self.CLIENT)
         #### Load ground plane, drone and obstacles models #########
-        self.PLANE_ID = p.loadURDF("plane.urdf", physicsClientId=self.CLIENT)
+        if not preserve_sim_bodies:
+            self.PLANE_ID = p.loadURDF("plane.urdf", physicsClientId=self.CLIENT)
 
-        self.DRONE_IDS = np.array([p.loadURDF(pkg_resources.resource_filename('gym_pybullet_drones', 'assets/'+self.URDF),
-                                              self.INIT_XYZS[i,:],
-                                              p.getQuaternionFromEuler(self.INIT_RPYS[i,:]),
-                                              flags = p.URDF_USE_INERTIA_FROM_FILE,
-                                              physicsClientId=self.CLIENT
-                                              ) for i in range(self.NUM_DRONES)])
+            self.DRONE_IDS = np.array([p.loadURDF(pkg_resources.resource_filename('gym_pybullet_drones', 'assets/'+self.URDF),
+                                                  self.INIT_XYZS[i,:],
+                                                  p.getQuaternionFromEuler(self.INIT_RPYS[i,:]),
+                                                  flags = p.URDF_USE_INERTIA_FROM_FILE,
+                                                  physicsClientId=self.CLIENT
+                                                  ) for i in range(self.NUM_DRONES)])
         #### Remove default damping #################################
         # for i in range(self.NUM_DRONES):
         #     p.changeDynamics(self.DRONE_IDS[i], -1, linearDamping=0, angularDamping=0)
@@ -575,12 +683,14 @@ class BaseAviary(gym.Env):
         #### E.g., to start a drone at [0,0,0] #####################
         # for i in range(self.NUM_DRONES):
             # p.setCollisionFilterPair(bodyUniqueIdA=self.PLANE_ID, bodyUniqueIdB=self.DRONE_IDS[i], linkIndexA=-1, linkIndexB=-1, enableCollision=0, physicsClientId=self.CLIENT)
-        if self.OBSTACLES:
+        if self.OBSTACLES and not preserve_sim_bodies:
             self._addObstacles()
         # for i in range(self.NUM_DRONES):
         #     self.lidar = self._update_lidar()
-        p.removeAllUserDebugItems(physicsClientId=self.CLIENT)
-        self.lidar_ids = [-1] * 64 # Resetear IDs para que se creen de nuevo
+        if not preserve_debug_items:
+            p.removeAllUserDebugItems(physicsClientId=self.CLIENT)
+        if not preserve_debug_items:
+            self.lidar_ids = [-1] * 64
         self.previous_lidar = None
 
             
@@ -649,7 +759,7 @@ class BaseAviary(gym.Env):
         self.previous_lidar = current_lidar.copy()
 
         # Visualización
-        if self.GUI:
+        if self.GUI and not getattr(self, "_suppress_lidar_debug", False):
             for i in range(64):
                 color = [1, 0, 0] if result[i][0] != -1 else [0, 1, 0]
                 self.lidar_ids[i] = p.addUserDebugLine(
@@ -900,12 +1010,13 @@ class BaseAviary(gym.Env):
           
     def _calculate_wind_force(self):
         """Calcula la fuerza del viento para este step"""
+        rng = getattr(self, "_episode_rng", self.np_random)
         if self.wind_type == "constant":
             self.wind_force = self.wind_mean
             
         elif self.wind_type == "random":
             # Viento que varía suavemente
-            noise = np.random.normal(0, self.wind_var, 3)
+            noise = rng.normal(0, self.wind_var, 3)
             self.wind_force = self.wind_mean + noise
             
         elif self.wind_type == "gust":
@@ -913,8 +1024,8 @@ class BaseAviary(gym.Env):
 
             # Ráfagas intermitentes
             if self.step_count % 400 == 0:
-                gust_strength = np.random.uniform(0.002, 0.01)
-                gust_direction = np.random.uniform(-1, 1, 3)
+                gust_strength = rng.uniform(0.002, 0.01)
+                gust_direction = rng.uniform(-1, 1, 3)
                 gust_direction /= np.linalg.norm(gust_direction)
                 self.wind_force = gust_strength * gust_direction
 
@@ -923,7 +1034,7 @@ class BaseAviary(gym.Env):
 
             # Ruido de alta frecuencia muy débil
             noise_strength = 0.0002
-            high_freq_noise = np.random.normal(0, noise_strength, 3)
+            high_freq_noise = rng.normal(0, noise_strength, 3)
 
             wind = self.wind_force + high_freq_noise
 

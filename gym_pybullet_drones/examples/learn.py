@@ -22,7 +22,6 @@ import os
 import time
 from datetime import datetime
 import argparse
-import gymnasium as gym
 import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -30,22 +29,29 @@ from torch.utils.tensorboard import SummaryWriter
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
-from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import constant_fn
 
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
-from stable_baselines3.common.evaluation import evaluate_policy
 
 from gym_pybullet_drones.utils.Logger import Logger
 from gym_pybullet_drones.envs.HoverAviary import HoverAviary
 from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
 from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType
+from gym_pybullet_drones.utils.evaluation import (
+    EVAL_DEVICE,
+    EVAL_SEEDS,
+    POWERLOOP_TRACK_SCALE,
+    POWERLOOP_POSITION_VARIATION,
+    POWERLOOP_ORIENTATION_VARIATION,
+    SeededEpisodeWrapper,
+    make_eval_env,
+)
 
 
 # Device autodetection and PyTorch perf tweaks
 print("CUDA available:", torch.cuda.is_available())
-DEVICE ="cpu"
+DEVICE = EVAL_DEVICE
 # Use half of logical cores to avoid oversubscription with VecEnv workers
 try:
     torch.set_num_threads(max(1, (os.cpu_count() or 1)//2))
@@ -67,34 +73,15 @@ DEFAULT_DRONE = DroneModel.CF2X250
 DEFAULT_ACT = ActionType.BRUSHLESS_THRUST
 DEFAULT_AGENTS = 1
 DEFAULT_MA = False
-physics=Physics.PYB # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
+physics=Physics.PYB_WIND # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
 # Start a fresh policy after changing the obstacle reward. Set this to a model
 # folder only when intentionally fine-tuning an existing policy.
-#CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'motores_250g_09.24.2026_16.03.21')
-CONTINUE_FROM = None
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'Race09.28.2026_15.41.08')
+# CONTINUE_FROM = None
 RANDOM_TARGETS= False # True or False
 
 
 import numpy as np
-import random
-
-class FixedSeedEvalWrapper(gym.Wrapper):
-    def __init__(self, env, seeds=list(range(15))):
-        super().__init__(env)
-        self.seeds = seeds
-        self.idx = 0
-
-    def reset(self, **kwargs):
-        current_seed = self.seeds[self.idx % len(self.seeds)]
-        kwargs['seed'] = current_seed
-        
-        # Fijar la semilla global de NumPy y Python para este episodio
-        np.random.seed(current_seed)
-        random.seed(current_seed)
-        print("current_seed ", current_seed)
-        
-        self.idx += 1
-        return self.env.reset(**kwargs)
 
 class SlowCallback(BaseCallback):
     def __init__(self, ctrl_freq, speed_multiplier=1.0, verbose=0):
@@ -124,7 +111,19 @@ class SlowCallback(BaseCallback):
         self.last_step_real_time = time.time()
         return True
 
-def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_GUI, plot=True, colab=DEFAULT_COLAB, record_video=DEFAULT_RECORD_VIDEO, local=True, continue_from=None):
+def run(
+    multiagent=DEFAULT_MA,
+    output_folder=DEFAULT_OUTPUT_FOLDER,
+    gui=DEFAULT_GUI,
+    plot=True,
+    colab=DEFAULT_COLAB,
+    record_video=DEFAULT_RECORD_VIDEO,
+    local=True,
+    continue_from=None,
+    track_scale=POWERLOOP_TRACK_SCALE,
+    track_position_variation=POWERLOOP_POSITION_VARIATION,
+    track_orientation_variation=POWERLOOP_ORIENTATION_VARIATION,
+):
     # Si se especifica un modelo para continuar, usar ese path, si no, crear uno nuevo
     print(f"Continuando entrenamiento desde: {continue_from}")
     if continue_from:
@@ -138,36 +137,75 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     # Alternar entre entrenamiento con render (GUI) y entrenamiento rápido (vectorizado)
     if gui:
         if not multiagent:
-            train_env = HoverAviary(gui=gui, drone_model=DEFAULT_DRONE, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, randomized = True)            
-            # En la sección donde creas eval_env:
-            eval_env = HoverAviary(drone_model=DEFAULT_DRONE, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized = False)
-            eval_env = Monitor(eval_env)
-            eval_env = FixedSeedEvalWrapper(eval_env, seeds=list(range(10))) # <-- AÑADIR ESTA LÍNEA
+            train_env = HoverAviary(
+                gui=gui,
+                drone_model=DEFAULT_DRONE,
+                initial_xyzs=np.array([[0.0, 0.0, 1.0]]),
+                initial_rpys=np.zeros((1, 3)),
+                obs=DEFAULT_OBS,
+                act=DEFAULT_ACT,
+                random_targets=RANDOM_TARGETS,
+                physics=physics,
+                randomized=True,
+                track_scale=track_scale,
+                track_position_variation=track_position_variation,
+                track_orientation_variation=track_orientation_variation,
+            )
+            train_env = SeededEpisodeWrapper(train_env)
+            eval_env = make_eval_env(
+                drone_model=DEFAULT_DRONE,
+                obs=DEFAULT_OBS,
+                act=DEFAULT_ACT,
+                random_targets=RANDOM_TARGETS,
+                physics=physics,
+                track_scale=track_scale,
+                track_position_variation=track_position_variation,
+                track_orientation_variation=track_orientation_variation,
+            )
             
         else:
             train_env = MultiHoverAviary(gui=gui, drone_model=DEFAULT_DRONE, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
-            eval_env = MultiHoverAviary(drone_model=DEFAULT_DRONE, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
-            
-            eval_env = Monitor(eval_env)
+            eval_env = make_eval_env(
+                multiagent=True,
+                drone_model=DEFAULT_DRONE,
+                obs=DEFAULT_OBS,
+                act=DEFAULT_ACT,
+                physics=physics,
+                num_drones=DEFAULT_AGENTS,
+            )
         use_render_callback = True
     else:
         if not multiagent:
             train_env = make_vec_env(HoverAviary,
-                                    env_kwargs=dict(drone_model=DEFAULT_DRONE, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized = True),
+                                    env_kwargs=dict(drone_model=DEFAULT_DRONE, initial_xyzs=np.array([[0.0, 0.0, 1.0]]), initial_rpys=np.zeros((1, 3)), obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized=True, track_scale=track_scale, track_position_variation=track_position_variation, track_orientation_variation=track_orientation_variation),
                                     n_envs=N_ENVS,
-                                    seed=0
+                                    seed=0,
+                                    wrapper_class=SeededEpisodeWrapper,
                                     )
-            eval_env = HoverAviary(drone_model=DEFAULT_DRONE, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics, ctrl_freq=60, randomized=False)
-            eval_env = Monitor(eval_env)
-            eval_env = FixedSeedEvalWrapper(eval_env, seeds=list(range(10)))
+            eval_env = make_eval_env(
+                drone_model=DEFAULT_DRONE,
+                obs=DEFAULT_OBS,
+                act=DEFAULT_ACT,
+                random_targets=RANDOM_TARGETS,
+                physics=physics,
+                track_scale=track_scale,
+                track_position_variation=track_position_variation,
+                track_orientation_variation=track_orientation_variation,
+            )
         else:
             train_env = make_vec_env(MultiHoverAviary,
                                     env_kwargs=dict(drone_model=DEFAULT_DRONE, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics,),
                                     n_envs=N_ENVS,
                                     seed=0
                                     )
-            eval_env = MultiHoverAviary(drone_model=DEFAULT_DRONE, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT, random_targets=RANDOM_TARGETS, physics=physics)
-            eval_env = Monitor(eval_env)
+            eval_env = make_eval_env(
+                multiagent=True,
+                drone_model=DEFAULT_DRONE,
+                obs=DEFAULT_OBS,
+                act=DEFAULT_ACT,
+                physics=physics,
+                num_drones=DEFAULT_AGENTS,
+            )
         use_render_callback = False
 
     #### Check the environment's spaces ########################
@@ -179,10 +217,12 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if continue_from and os.path.isfile(os.path.join(filename, 'final_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'final_model.zip')}")
         model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device=DEVICE,
-        #ent_coef = 0.005, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
-        # target_kl= 0.6, # Aumentado para permitir más 
-        #clip_range = 0.1, 
-        #learning_rate = lambda p: 0.0005
+        ent_coef = 0.05, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
+        target_kl= 0.2, # Aumentado para permitir más 
+        clip_range = 0.2, 
+        learning_rate = lambda p: 0.00005,
+        gamma=0.995,
+        seed=0,
         )
         
         # model.clip_range = constant_fn(0.2)
@@ -192,6 +232,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         model = PPO('MlpPolicy',
                 train_env,
                 device=DEVICE,
+                seed=0,
                 tensorboard_log=filename+'/tb/',
                 n_steps=int(512*4),     # Aumentado para más muestras por actualización, mejor estimación de la ventaja, pero más memoria y menos actualizaciones por paso
                 batch_size=int(256*4),    # Reducido para permitir más actualizaciones por paso, pero puede aumentar la varianza del gradiente
@@ -263,8 +304,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     if DEFAULT_ACT == ActionType.ONE_D_RPM:
         target_reward = 474.15 if not multiagent else 949.5
     else:
-        
-        target_reward = 6500 if not multiagent else 920.
+        target_reward = 1500 if not multiagent else 920.
     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=target_reward, verbose=1)
     eval_callback = EvalCallback(
         eval_env,
@@ -273,7 +313,7 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
         best_model_save_path=filename+'/',
         log_path=filename+'/',
         eval_freq=int(6000),      # ~1,000 pasos por entorno (aprox. 16.6 seg de vuelo simulado)
-        n_eval_episodes=10,
+        n_eval_episodes=len(EVAL_SEEDS),
         deterministic=True,
         render=False
     )
@@ -313,8 +353,8 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
     #if os.path.isfile(filename+'/final_model.zip'):
     #    path = filename+'/final_model.zip' 
     path = None
-    if os.path.isfile(filename+'/final_model.zip'):
-        path = filename+'/final_model.zip'
+    if os.path.isfile(filename+'/best_model.zip'):
+        path = filename+'/best_model.zip'
     elif os.path.isfile(filename+'/final_model.zip'):
         path = filename+'/final_model.zip'
     else:
@@ -324,15 +364,15 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
 
     #### Show (and record a video of) the model's performance ##
     if not multiagent:
-        test_env = HoverAviary(gui=True,
-                       drone_model=DEFAULT_DRONE,
-                               obs=DEFAULT_OBS,
-                               act=DEFAULT_ACT,
-                               record=record_video,
-                               initial_xyzs=np.array([[0,0,1]]),
-                               initial_rpys=np.array([[0,0,0]]),
-                               random_targets=RANDOM_TARGETS, physics=Physics.PYB)
-        test_env_nogui = HoverAviary(drone_model=DEFAULT_DRONE, obs=DEFAULT_OBS, act=DEFAULT_ACT)
+        test_env = make_eval_env(
+            gui=True,
+            record=record_video,
+            drone_model=DEFAULT_DRONE,
+            obs=DEFAULT_OBS,
+            act=DEFAULT_ACT,
+            random_targets=RANDOM_TARGETS,
+            physics=physics,
+        )
     else:
         test_env = MultiHoverAviary(gui=True,
                         drone_model=DEFAULT_DRONE,
@@ -340,7 +380,6 @@ def run(multiagent=DEFAULT_MA, output_folder=DEFAULT_OUTPUT_FOLDER, gui=DEFAULT_
                                         obs=DEFAULT_OBS,
                                         act=DEFAULT_ACT,
                                         record=record_video,)
-        test_env_nogui = MultiHoverAviary(drone_model=DEFAULT_DRONE, num_drones=DEFAULT_AGENTS, obs=DEFAULT_OBS, act=DEFAULT_ACT)
     logger = Logger(logging_freq_hz=int(test_env.CTRL_FREQ),
                 num_drones=DEFAULT_AGENTS if multiagent else 1,
                 output_folder=output_folder,
@@ -412,6 +451,9 @@ if __name__ == '__main__':
     parser.add_argument('--output_folder',      default=DEFAULT_OUTPUT_FOLDER, type=str,           help='Folder where to save logs (default: "results")', metavar='')
     parser.add_argument('--colab',              default=DEFAULT_COLAB,         type=bool,          help='Whether example is being run by a notebook (default: "False")', metavar='')
     parser.add_argument('--continue_from',      default=CONTINUE_FROM,                  type=str,           help='Ruta a la carpeta del modelo guardado para continuar entrenamiento', metavar='')
+    parser.add_argument('--track_scale', default=POWERLOOP_TRACK_SCALE, type=float, help='Escala XY de la pista; las puertas conservan su tamaño')
+    parser.add_argument('--track_position_variation', default=POWERLOOP_POSITION_VARIATION, type=float, help='Variación de posición relativa; 0 desactiva')
+    parser.add_argument('--track_orientation_variation', default=POWERLOOP_ORIENTATION_VARIATION, type=float, help='Variación de orientación como fracción de pi; 0 desactiva')
     ARGS = parser.parse_args()
 
     run(**vars(ARGS))

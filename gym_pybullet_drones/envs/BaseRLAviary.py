@@ -82,7 +82,7 @@ class BaseRLAviary(BaseAviary):
         vision_attributes = True if obs == ObservationType.RGB else False
         self.OBS_TYPE = obs
         self.ACT_TYPE = act
-        self.OBSTACLE_TYPE = "powertrack" # "cubes", "moving_cubes", "donas", "map"
+        self.OBSTACLE_TYPE = "moving_cubes" # "cubes", "moving_cubes", "donas", "map"
         self.moving_obstacle_time = 0.0
         self.moving_obstacle_centers = np.empty((0, 3), dtype=float)
         self.moving_obstacle_motion = []
@@ -174,10 +174,10 @@ class BaseRLAviary(BaseAviary):
                     posz = lambda : 0
                 
                 self.posBo = [
-                    [2.4 + posx(), 3.2 + posy(), 1.0 + posz()],
-                    [5.4 + posx(), -1.4 + posy(), 1.0 + posz()],
-                    [-5.0 + posx(), 0.4 + posy(), 1.0 + posz()],
-                    [-2.3 + posx(), -2.3 + posy(), 1.0 + posz()],
+                    [4.4 + posx(), 4.2 + posy(), 1.0 + posz()],
+                    [4.4 + posx(), -4.4 + posy(), 1.0 + posz()],
+                    [-3.0 + posx(), -4.4 + posy(), 1.0 + posz()],
+                    [1.3 + posx(), -10.3 + posy(), 1.0 + posz()],
                 ]
                 self.moving_obstacle_centers = np.asarray(self.posBo, dtype=float)
                 
@@ -192,8 +192,8 @@ class BaseRLAviary(BaseAviary):
                         largo = np.random.uniform(.2,.24)
                         alto  = np.random.uniform(1.5,2.7)
                     else:
-                        ancho = 0.15
-                        largo = 0.15
+                        ancho = 0.05
+                        largo = 0.05
                         alto  = 1.8
                     # 2. Crear las formas en PyBullet
                     # halfExtents=[0.15, 0.15, 1.8] genera una columna de 30x30 cm x 3.6m de alto
@@ -224,12 +224,12 @@ class BaseRLAviary(BaseAviary):
                                 rng.uniform(0.8, 1.8),
                                 rng.uniform(0.25, 0.75),
                             ]),
-                            "frequency": rng.uniform(0.05, 0.25, size=3),
+                            "frequency": rng.uniform(0.05, 0.1, size=3),
                             "phase": rng.uniform(0.0, 2.0 * np.pi, size=3),
                             "rotation_amplitude": rng.uniform(
-                                np.deg2rad(15.0), np.deg2rad(40.0), size=3
+                                np.deg2rad(05.0), np.deg2rad(20.0), size=3
                             ),
-                            "rotation_frequency": rng.uniform(0.12, 0.35, size=3),
+                            "rotation_frequency": rng.uniform(0.02, 0.15, size=3),
                             "rotation_phase": rng.uniform(0.0, 2.0 * np.pi, size=3),
                         })
                     
@@ -262,9 +262,6 @@ class BaseRLAviary(BaseAviary):
                     physicsClientId=self.CLIENT
                 )
                 
-        elif self.OBSTACLE_TYPE == "powertrack":
-            track = PowerloopTrack( show_labels=True ) 
-            track.create()
 
     def _updateMovingObstacles(self, dt):
         """Move cube obstacles smoothly inside their configured motion margins."""
@@ -394,12 +391,14 @@ class BaseRLAviary(BaseAviary):
             col_id = p.createCollisionShape(
                 shapeType=p.GEOM_MESH,
                 fileName=obj_path,
-                flags=p.GEOM_FORCE_CONCAVE_TRIMESH
+                flags=p.GEOM_FORCE_CONCAVE_TRIMESH,
+                physicsClientId=self.CLIENT,
             )
             vis_id = p.createVisualShape(
                 shapeType=p.GEOM_MESH,
                 fileName=obj_path,
-                rgbaColor=color_rgba
+                rgbaColor=color_rgba,
+                physicsClientId=self.CLIENT,
             )
 
             quat = p.getQuaternionFromEuler(rot_euler)
@@ -409,7 +408,8 @@ class BaseRLAviary(BaseAviary):
                 baseCollisionShapeIndex=col_id,
                 baseVisualShapeIndex=vis_id,
                 basePosition=posicion[i],
-                baseOrientation=quat
+                baseOrientation=quat,
+                physicsClientId=self.CLIENT,
             )
             donas_ids.append(dona_id)
 
@@ -444,46 +444,20 @@ class BaseRLAviary(BaseAviary):
 
     ################################################################################
 
-    def _preprocessAction(self,
-                          action
-                          ):
-        """Pre-processes the action passed to `.step()` into motors' RPMs.
-
-        Parameter `action` is processed differenly for each of the different
-        action types: the input to n-th drone, `action[n]` can be of length
-        1, 3, or 4, and represent RPMs, desired thrust and torques, or the next
-        target position to reach using PID control.
-
-        Parameter `action` is processed differenly for each of the different
-        action types: `action` can be of length 1, 3, or 4 and represent 
-        RPMs, desired thrust and torques, the next target position to reach 
-        using PID control, a desired velocity vector, etc.
-
-        Parameters
-        ----------
-        action : ndarray
-            The input action for each drone, to be translated into RPMs.
-
-        Returns
-        -------
-        ndarray
-            (NUM_DRONES, 4)-shaped array of ints containing to clipped RPMs
-            commanded to the 4 motors of each drone.
-
-        """
+    def _preprocessAction(self, action):
+        """Pre-processes the action passed to `.step()` into motors' RPMs."""
         self.action_buffer.append(action)
         if self.ACT_TYPE == ActionType.BRUSHLESS_THRUST and self.step_counter == 0:
             self.brushless_rpm.fill(self.HOVER_RPM)
         
         self.action = action.copy()
-
-
         self.prev_action = action.copy()
-        rpm = np.zeros((self.NUM_DRONES,4))
+        rpm = np.zeros((self.NUM_DRONES, 4))
+
         for k in range(action.shape[0]):
             target = action[k, :]
             if self.ACT_TYPE == ActionType.RPM:
-                rpm[k,:] = np.array(self.HOVER_RPM * (1+0.05*target))
+                rpm[k, :] = np.array(self.HOVER_RPM * (1 + 0.05 * target))
             elif self.ACT_TYPE == ActionType.BRUSHLESS_THRUST:
                 target = np.clip(np.asarray(target, dtype=float), -1.0, 1.0)
                 max_motor_thrust = self.MAX_THRUST / 4.0
@@ -491,8 +465,7 @@ class BaseRLAviary(BaseAviary):
                 motor_thrust = np.where(
                     target <= 0.0,
                     hover_motor_thrust * (target + 1.0),
-                    hover_motor_thrust
-                    + (max_motor_thrust - hover_motor_thrust) * target
+                    hover_motor_thrust + (max_motor_thrust - hover_motor_thrust) * target
                 )
                 target_rpm = np.sqrt(np.maximum(motor_thrust, 0.0) / self.KF)
                 alpha = 1.0 - np.exp(-self.CTRL_TIMESTEP / self.BRUSHLESS_MOTOR_TIME_CONSTANT)
@@ -504,46 +477,48 @@ class BaseRLAviary(BaseAviary):
                     current_position=state[0:3],
                     destination=target,
                     step_size=1,
-                    )
-                rpm_k, _, _ = self.ctrl[k].computeControl(control_timestep=self.CTRL_TIMESTEP,
-                                                        cur_pos=state[0:3],
-                                                        cur_quat=state[3:7],
-                                                        cur_vel=state[10:13],
-                                                        cur_ang_vel=state[13:16],
-                                                        target_pos=next_pos
-                                                        )
-                rpm[k,:] = rpm_k
+                )
+                rpm_k, _, _ = self.ctrl[k].computeControl(
+                    control_timestep=self.CTRL_TIMESTEP,
+                    cur_pos=state[0:3],
+                    cur_quat=state[3:7],
+                    cur_vel=state[10:13],
+                    cur_ang_vel=state[13:16],
+                    target_pos=next_pos
+                )
+                rpm[k, :] = rpm_k
             elif self.ACT_TYPE == ActionType.VEL:
                 state = self._getDroneStateVector(k)
-                if np.linalg.norm(target[0:3]) != 0:
-                    v_unit_vector = target[0:3] / np.linalg.norm(target[0:3])
-                else:
-                    v_unit_vector = np.zeros(3)
-                temp, _, _ = self.ctrl[k].computeControl(control_timestep=self.CTRL_TIMESTEP,
-                                                        cur_pos=state[0:3],
-                                                        cur_quat=state[3:7],
-                                                        cur_vel=state[10:13],
-                                                        cur_ang_vel=state[13:16],
-                                                        target_pos=state[0:3], # same as the current position
-                                                        target_rpy=np.array([0,0,state[9]]), # keep current yaw
-                                                        target_vel=self.SPEED_LIMIT * np.abs(target[3]) * v_unit_vector # target the desired velocity vector
-                                                        )
-                rpm[k,:] = temp
+                norm_v = np.linalg.norm(target[0:3])
+                v_unit_vector = target[0:3] / norm_v if norm_v > 1e-6 else np.zeros(3)
+                
+                temp, _, _ = self.ctrl[k].computeControl(
+                    control_timestep=self.CTRL_TIMESTEP,
+                    cur_pos=state[0:3],
+                    cur_quat=state[3:7],
+                    cur_vel=state[10:13],
+                    cur_ang_vel=state[13:16],
+                    target_pos=state[0:3],
+                    target_rpy=np.array([0, 0, state[9]]),
+                    target_vel=self.SPEED_LIMIT * np.abs(target[3]) * v_unit_vector
+                )
+                rpm[k, :] = temp
             elif self.ACT_TYPE == ActionType.ONE_D_RPM:
-                rpm[k,:] = np.repeat(self.HOVER_RPM * (1+0.05*target), 4)
+                rpm[k, :] = np.repeat(self.HOVER_RPM * (1 + 0.05 * target), 4)
             elif self.ACT_TYPE == ActionType.ONE_D_PID:
                 state = self._getDroneStateVector(k)
-                res, _, _ = self.ctrl[k].computeControl(control_timestep=self.CTRL_TIMESTEP,
-                                                        cur_pos=state[0:3],
-                                                        cur_quat=state[3:7],
-                                                        cur_vel=state[10:13],
-                                                        cur_ang_vel=state[13:16],
-                                                        target_pos=state[0:3]+0.1*np.array([0,0,target[0]])
-                                                        )
-                rpm[k,:] = res
+                res, _, _ = self.ctrl[k].computeControl(
+                    control_timestep=self.CTRL_TIMESTEP,
+                    cur_pos=state[0:3],
+                    cur_quat=state[3:7],
+                    cur_vel=state[10:13],
+                    cur_ang_vel=state[13:16],
+                    target_pos=state[0:3] + 0.1 * np.array([0, 0, target[0]])
+                )
+                rpm[k, :] = res
             else:
-                print("[ERROR] in BaseRLAviary._preprocessAction()")
-                exit()
+                raise ValueError(f"[ERROR] Action type {self.ACT_TYPE} not supported in _preprocessAction()")
+                
         return rpm
 
     ################################################################################
@@ -561,510 +536,221 @@ class BaseRLAviary(BaseAviary):
             lo = -np.inf
             hi = np.inf
 
-            # ============================================================
-            # CAMBIO: 14 -> 17 variables
-            #
-            # Antes:
-            #   3 u_dir
-            #   1 d_norm
-            #   4 quaternion
-            #   3 linear vel
-            #   3 angular vel
-            #
-            # Ahora:
-            #   3 u_dir
-            #   1 d_norm
-            #   3 gate_normal_local   <-- NUEVO
-            #   4 quaternion
-            #   3 linear vel
-            #   3 angular vel
-            # ============================================================
-
-            obs_lower_bound = np.array([
-                -1.0, -1.0, -1.0,      # u_dir
+            # Estructura del vector cinemático (17 por dron):
+            # 3 (u_dir) + 1 (d_norm) + 3 (gate_normal_local) + 4 (quaternion) + 3 (linear vel) + 3 (angular vel)
+            single_drone_lower = np.array([
+                -1.0, -1.0, -1.0,       # u_dir
                 0.0,                    # d_norm
-                -1.0, -1.0, -1.0,      # gate_normal_local <-- NUEVO
+                -1.0, -1.0, -1.0,       # gate_normal_local
                 -1.0, -1.0, -1.0, -1.0, # quaternion
                 lo, lo, lo,             # linear vel
                 lo, lo, lo              # angular vel
             ], dtype=np.float32)
 
-            obs_lower_bound = np.tile(
-                obs_lower_bound,
-                self.NUM_DRONES
-            )
-
-            obs_upper_bound = np.array([
-                1.0, 1.0, 1.0,         # u_dir
+            single_drone_upper = np.array([
+                1.0, 1.0, 1.0,          # u_dir
                 1.0,                    # d_norm
-                1.0, 1.0, 1.0,         # gate_normal_local <-- NUEVO
-                1.0, 1.0, 1.0, 1.0,    # quaternion
+                1.0, 1.0, 1.0,          # gate_normal_local
+                1.0, 1.0, 1.0, 1.0,     # quaternion
                 hi, hi, hi,             # linear vel
                 hi, hi, hi              # angular vel
             ], dtype=np.float32)
 
-            obs_upper_bound = np.tile(
-                obs_upper_bound,
-                self.NUM_DRONES
-            )
+            obs_lower_bound = np.tile(single_drone_lower, self.NUM_DRONES)
+            obs_upper_bound = np.tile(single_drone_upper, self.NUM_DRONES)
 
-            act_lo = -1
-            act_hi = 1
+            # Determinar dimensión del buffer de acciones según el tipo de acción
+            if self.ACT_TYPE in [ActionType.RPM, ActionType.BRUSHLESS_THRUST, ActionType.PID, ActionType.VEL]:
+                action_size = 4
+            elif self.ACT_TYPE in [ActionType.ONE_D_RPM, ActionType.ONE_D_PID]:
+                action_size = 1
+            else:
+                action_size = 4
 
-            lidar_lo = -1
-            lidar_hi = 1
-
+            act_lo, act_hi = -1.0, 1.0
             lidar_size = 128
+            lidar_lo, lidar_hi = -1.0, 1.0
 
-            self.lidar_buffer.clear()
+            # Expansión para el buffer de acciones pasadas
+            action_buffer_len = self.NUM_DRONES * action_size * self.ACTION_BUFFER_SIZE
+            obs_lower_bound = np.hstack([obs_lower_bound, np.full(action_buffer_len, act_lo, dtype=np.float32)])
+            obs_upper_bound = np.hstack([obs_upper_bound, np.full(action_buffer_len, act_hi, dtype=np.float32)])
 
-            # Action history
-            for _ in range(self.ACTION_BUFFER_SIZE):
-                if self.ACT_TYPE == ActionType.RPM:
-                    action_size = 4
-                elif self.ACT_TYPE == ActionType.PID:
-                    action_size = 4
-                elif self.ACT_TYPE == ActionType.VEL:
-                    action_size = 4
-                elif self.ACT_TYPE == ActionType.ONE_D_RPM:
-                    action_size = 1
-                elif self.ACT_TYPE == ActionType.ONE_D_PID:
-                    action_size = 1
-                else:
-                    action_size = 4
-
-                obs_lower_bound = np.hstack([
-                    obs_lower_bound,
-                    np.full(
-                        self.NUM_DRONES * action_size,
-                        act_lo,
-                        dtype=np.float32
-                    )
-                ])
-
-                obs_upper_bound = np.hstack([
-                    obs_upper_bound,
-                    np.full(
-                        self.NUM_DRONES * action_size,
-                        act_hi,
-                        dtype=np.float32
-                    )
-                ])
-
-            # Lidar history
-            for _ in range(self.LIDAR_BUFFER_SIZE):
-                obs_lower_bound = np.hstack([
-                    obs_lower_bound,
-                    np.full(
-                        self.NUM_DRONES * lidar_size,
-                        lidar_lo,
-                        dtype=np.float32
-                    )
-                ])
-
-                obs_upper_bound = np.hstack([
-                    obs_upper_bound,
-                    np.full(
-                        self.NUM_DRONES * lidar_size,
-                        lidar_hi,
-                        dtype=np.float32
-                    )
-                ])
+            # Expansión para el buffer de LiDAR pasado
+            lidar_buffer_len = self.NUM_DRONES * lidar_size * self.LIDAR_BUFFER_SIZE
+            obs_lower_bound = np.hstack([obs_lower_bound, np.full(lidar_buffer_len, lidar_lo, dtype=np.float32)])
+            obs_upper_bound = np.hstack([obs_upper_bound, np.full(lidar_buffer_len, lidar_hi, dtype=np.float32)])
 
             return spaces.Box(
                 low=obs_lower_bound,
                 high=obs_upper_bound,
                 dtype=np.float32
             )
-                ############################################################
         else:
-            print("[ERROR] in BaseRLAviary._observationSpace()")
-    
+            raise ValueError(f"[ERROR] Observation type {self.OBS_TYPE} not supported in _observationSpace()")
+
     ################################################################################
 
-
     def _computeObs(self):
+        """Returns the current observation of the environment."""
         if self.OBS_TYPE == ObservationType.RGB:
-            return self._getDroneImages()
+            if self.step_counter % self.IMG_CAPTURE_FREQ == 0:
+                for i in range(self.NUM_DRONES):
+                    self.rgb[i], self.dep[i], self.seg[i] = self._getDroneImages(i, segmentation=False)
+                    
+                    if self.RECORD:
+                        self._exportImage(
+                            img_type=ImageType.RGB,
+                            img_input=self.rgb[i],
+                            path=self.ONBOARD_IMG_PATH + "drone_" + str(i),
+                            frame_num=int(self.step_counter / self.IMG_CAPTURE_FREQ)
+                        )
+            return np.array([self.rgb[i] for i in range(self.NUM_DRONES)]).astype('float32')
 
         elif self.OBS_TYPE == ObservationType.KIN:
-
-            # ============================================================
-            # CAMBIO: 14 -> 17
-            # ============================================================
-            obs_17 = np.zeros(
-                (self.NUM_DRONES, 17),
-                dtype=np.float32
-            )
-
+            # 1. Medición LiDAR y ruido
             current_lidar = self.lidar.copy()
+            if getattr(self, 'enable_noise', False) and hasattr(self, 'noise_model'):
+                current_lidar = self.noise_model.apply_laser_noise(current_lidar)
 
-            if self.enable_noise:
-                current_lidar = self.noise_model.apply_laser_noise(
-                    current_lidar
-                )
+            self.lidar_buffer.append(current_lidar.copy())
+
+            track = getattr(self, "track", None)
+            gates_info = PowerloopTrack.get_gate_data(
+                track.track_points if track is not None else None
+            )
+            obs_kinematics = []
 
             for i in range(self.NUM_DRONES):
-
                 obs = self._getDroneStateVector(i)
 
                 quat_world = obs[3:7]
-
                 current_v_global = obs[10:13]
-
                 ang_vel_global = obs[13:16]
 
-                rot_matrix = np.array(
-                    p.getMatrixFromQuaternion(quat_world)
-                ).reshape(3, 3)
+                rot_matrix = np.array(p.getMatrixFromQuaternion(quat_world)).reshape(3, 3)
 
-                # ========================================================
-                # TARGET POSITION
-                # ========================================================
-
+                # Determinación de Target y Normal
                 if hasattr(self, 'TARGET_POS'):
+                    target = self.TARGET_POS if self.NUM_DRONES == 1 else self.TARGET_POS[i]
+                    delta_pos = target - obs[0:3]
+                    
+                    gate_normal_global = np.zeros(3, dtype=np.float32)
+                    found_gate = False
 
-                    if self.NUM_DRONES == 1:
-                        delta_pos = self.TARGET_POS - obs[0:3]
-
-                    else:
-                        delta_pos = self.TARGET_POS[i] - obs[0:3]
-
+                    if hasattr(self, 'current_gate_idx'):
+                        idx = (
+                            self.current_gate_idx[i]
+                            if isinstance(self.current_gate_idx, (list, np.ndarray))
+                            else self.current_gate_idx
+                        )
+                        idx = int(idx) % len(gates_info)
+                        if np.allclose(
+                            target,
+                            gates_info[idx]["position"],
+                            atol=1e-3,
+                        ):
+                            gate_normal_global = gates_info[idx]["normal"].copy()
+                            found_gate = True
+                    
+                    if not found_gate:
+                        for gate in gates_info:
+                            if np.allclose(target, gate["position"], atol=1e-3):
+                                gate_normal_global = gate["normal"].copy()
+                                found_gate = True
+                                break
+                    
+                    if not found_gate and hasattr(self, 'current_gate_idx'):
+                        idx = (
+                            self.current_gate_idx[i]
+                            if isinstance(self.current_gate_idx, (list, np.ndarray))
+                            else self.current_gate_idx
+                        )
+                        gate_normal_global = gates_info[idx % len(gates_info)]["normal"].copy()
                 else:
                     delta_pos = np.zeros(3)
+                    gate_normal_global = np.zeros(3, dtype=np.float32)
 
                 dist_total = np.linalg.norm(delta_pos)
 
-                d_min = 0.05
-
-                if dist_total < d_min:
+                if dist_total < 0.05:
                     u_unit_global = np.zeros(3)
-
                 else:
                     u_unit_global = delta_pos / dist_total
 
-                if np.linalg.norm(u_unit_global[:2]) < 0.08:
-
-                    u_unit_global[0] = 0
-                    u_unit_global[1] = 0
-                    u_unit_global[2] = np.sign(
-                        u_unit_global[2]
-                    )
-
-                # Dirección hacia el target expresada en frame local
+                # Proyecciones a Marco Local
                 u_unit_local = rot_matrix.T @ u_unit_global
+                gate_normal_local = rot_matrix.T @ gate_normal_global
+                current_v_local = rot_matrix.T @ current_v_global
+                vel_angle_local = rot_matrix.T @ ang_vel_global
 
-                # ========================================================
-                # CAMBIO NUEVO:
-                # NORMAL DE LA PUERTA EN FRAME LOCAL
-                #
-                # self.gate_normals contiene la normal de cada gate
-                # expresada en coordenadas globales.
-                #
-                # Se transforma usando la misma rotación que ya utilizas
-                # para velocidad y dirección.
-                # ========================================================
-
-                if (
-                    hasattr(self, 'gate_normals')
-                    and hasattr(self, 'current_gate_idx')
-                    and self.current_gate_idx < len(self.gate_normals)
-                ):
-
-                    gate_normal_global = np.array(
-                        self.gate_normals[self.current_gate_idx],
-                        dtype=np.float32
-                    )
-
-                    gate_normal_local = (
-                        rot_matrix.T @ gate_normal_global
-                    )
-
-                    # Normalización por seguridad
-                    gate_normal_norm = np.linalg.norm(
-                        gate_normal_local
-                    )
-
-                    if gate_normal_norm > 1e-6:
-                        gate_normal_local /= gate_normal_norm
-
-                    else:
-                        gate_normal_local = np.zeros(
-                            3,
-                            dtype=np.float32
-                        )
-
-                else:
-                    # Para benchmarks que todavía no tengan normales
-                    gate_normal_local = np.zeros(
-                        3,
-                        dtype=np.float32
-                    )
-                # print("gate_normal_local ", gate_normal_local)
-                
-                # ============================================================
-                # FLECHA DE LA NORMAL DE LA PUERTA
-                # ============================================================
-                if self.GUI :
-                    if np.linalg.norm(gate_normal_local) > 1e-6:
-
-                        # Normal local -> mundo
-                        gate_normal_world = (
-                            gate_normal_local
-                        )
-
-                        gate_normal_world /= (
-                            np.linalg.norm(gate_normal_world) + 1e-8
-                        )
-
-                        arrow_length = 1.5
-                        arrow_head_length = 0.35
-                        arrow_head_width = 0.20
-
-                        start = obs[0:3]
-                        end = (
-                            obs[0:3]
-                            + arrow_length * gate_normal_world
-                        )
-
-                        # Dirección hacia atrás para las puntas
-                        backward = (
-                            -gate_normal_world
-                            * arrow_head_length
-                        )
-
-                        # Vector perpendicular para abrir las puntas
-                        reference = np.array([
-                            0.0,
-                            0.0,
-                            1.0
-                        ])
-
-                        side = np.cross(
-                            gate_normal_world,
-                            reference
-                        )
-
-                        side_norm = np.linalg.norm(side)
-
-                        if side_norm < 1e-6:
-                            reference = np.array([
-                                1.0,
-                                0.0,
-                                0.0
-                            ])
-
-                            side = np.cross(
-                                gate_normal_world,
-                                reference
-                            )
-
-                            side_norm = np.linalg.norm(side)
-
-                        side /= side_norm
-
-                        arrow_head_1 = (
-                            end
-                            + backward
-                            + arrow_head_width * side
-                        )
-
-                        arrow_head_2 = (
-                            end
-                            + backward
-                            - arrow_head_width * side
-                        )
-
-                        # --------------------------------------------------------
-                        # Crear o actualizar las 3 líneas
-                        # --------------------------------------------------------
-
-                        lines = [
-                            (start, end),
-                            (end, arrow_head_1),
-                            (end, arrow_head_2)
-                        ]
-
-                        for j, (line_start, line_end) in enumerate(lines):
-
-                            if self.gate_normal_arrow_ids[j] == -1:
-
-                                self.gate_normal_arrow_ids[j] = (
-                                    p.addUserDebugLine(
-                                        line_start,
-                                        line_end,
-                                        lineColorRGB=[1, 0, 0],
-                                        lineWidth=4.0,
-                                        lifeTime=0
-                                    )
-                                )
-
-                            else:
-
-                                p.addUserDebugLine(
-                                    line_start,
-                                    line_end,
-                                    lineColorRGB=[1, 0, 0],
-                                    lineWidth=4.0,
-                                    lifeTime=0,
-                                    replaceItemUniqueId=(
-                                        self.gate_normal_arrow_ids[j]
-                                    )
-                                )
-                # ========================================================
-                # VELOCIDADES LOCALES
-                # ========================================================
-
-                current_v_local = (
-                    rot_matrix.T @ current_v_global
-                )
-
-                vel_angle_local = (
-                    rot_matrix.T @ ang_vel_global
-                )
-
-                # ========================================================
-                # QUATERNION LOCAL
-                # ========================================================
-
+                # Cuaternión Local
                 r_world = R.from_quat(quat_world)
-
                 _, _, yaw = r_world.as_euler('xyz')
-
-                if (
-                    not hasattr(self, 'initial_yaws')
-                    or self.step_counter == 0
-                ):
-
-                    self.initial_yaws = [
-                        R.from_quat(
-                            self._getDroneStateVector(j)[3:7]
-                        ).as_euler('xyz')[2]
-                        for j in range(self.NUM_DRONES)
-                    ]
-
-                q_yaw_inv = R.from_euler(
-                    'z',
-                    -yaw
-                )
-
-                q_local = (
-                    q_yaw_inv * r_world
-                ).as_quat()
+                
+                q_yaw_inv = R.from_euler('z', -yaw)
+                q_local = (q_yaw_inv * r_world).as_quat()
 
                 if q_local[3] < 0:
                     q_local = -q_local
 
-                # ========================================================
-                # NORMALIZACIÓN DE DISTANCIA
-                # ========================================================
-
                 S = 5.0
+                d_norm = np.tanh(dist_total / S)
 
-                d_norm = np.tanh(
-                    dist_total / S
-                )
-
-                # ========================================================
-                # NOISE
-                # ========================================================
-
-                if self.enable_noise:
-
-                    u_unit_local, current_v_local = (
-                        self.noise_model.apply_odometry_noise(
-                            u_unit_local,
-                            current_v_local
-                        )
+                # Aplicación de ruido sobre variables locales
+                if getattr(self, 'enable_noise', False) and hasattr(self, 'noise_model'):
+                    u_unit_local, current_v_local = self.noise_model.apply_odometry_noise(
+                        u_unit_local, current_v_local
                     )
-
-                    u_norm = np.linalg.norm(
-                        u_unit_local
-                    )
-
+                    
+                    u_norm = np.linalg.norm(u_unit_local)
                     if u_norm > 1e-6:
-                        u_unit_local /= u_norm
+                        u_unit_local = u_unit_local / u_norm
 
-                    _, vel_angle_local, _ = (
-                        self.noise_model.apply_imu_noise(
-                            acc=np.zeros(3),
-                            gyro=vel_angle_local,
-                            angles=None
-                        )
+                    _, vel_angle_local, _ = self.noise_model.apply_imu_noise(
+                        acc=np.zeros(3),
+                        gyro=vel_angle_local,
+                        angles=None
                     )
 
-                    euler_local = R.from_quat(
-                        q_local
-                    ).as_euler('xyz')
-
-                    _, _, euler_local = (
-                        self.noise_model.apply_imu_noise(
-                            acc=np.zeros(3),
-                            gyro=np.zeros(3),
-                            angles=euler_local
-                        )
+                    euler_local = R.from_quat(q_local).as_euler('xyz')
+                    _, _, euler_local = self.noise_model.apply_imu_noise(
+                        acc=np.zeros(3),
+                        gyro=np.zeros(3),
+                        angles=euler_local
                     )
-
-                    q_local = R.from_euler(
-                        'xyz',
-                        euler_local
-                    ).as_quat()
-
+                    q_local = R.from_euler('xyz', euler_local).as_quat()
                     if q_local[3] < 0:
                         q_local = -q_local
 
-                # ========================================================
-                # CAMBIO: OBSERVACIÓN FINAL 17 ELEMENTOS
-                # ========================================================
+                norm_g = np.linalg.norm(gate_normal_local)
+                if norm_g > 1e-6:
+                    gate_normal_local = gate_normal_local / norm_g
 
-                obs_17[i, :] = np.hstack([
-                    u_unit_local,       # 3
-                    d_norm,             # 1
-                    gate_normal_local,  # 3 <-- NUEVO
-                    q_local,            # 4
-                    current_v_local,    # 3
-                    vel_angle_local     # 3
-                ]).reshape(17,)
+                # Mapeo exacto asignado a la estructura de _observationSpace:
+                # 3 (u_dir) + 1 (d_norm) + 3 (gate_normal_local) + 4 (q_local) + 3 (current_v_local) + 3 (vel_angle_local)
+                single_drone_obs = np.hstack([
+                    u_unit_local,           # 3
+                    np.array([d_norm]),     # 1
+                    gate_normal_local,      # 3
+                    q_local,                # 4
+                    current_v_local,        # 3
+                    vel_angle_local         # 3
+                ]).astype(np.float32)
 
-            # ============================================================
-            # LIDAR BUFFER
-            # ============================================================
+                obs_kinematics.append(single_drone_obs)
 
-            self.lidar_buffer.append(
-                current_lidar.copy()
-            )
+            # Concatenar cinemática de todos los drones en un vector 1D
+            flat_obs = np.concatenate(obs_kinematics)
 
-            ret = np.array([
-                obs_17[i, :]
-                for i in range(self.NUM_DRONES)
-            ]).astype('float32')
-
-            # ============================================================
-            # ACTION BUFFER
-            # ============================================================
-
+            # Concatenar buffer de acciones pasadas
             for action in self.action_buffer:
+                flat_obs = np.hstack([flat_obs, np.asarray(action, dtype=np.float32).flatten()])
 
-                ret = np.hstack([
-                    ret,
-                    action
-                ])
+            # Concatenar buffer de LiDAR pasado
+            for lidar_frame in self.lidar_buffer:
+                flat_obs = np.hstack([flat_obs, np.asarray(lidar_frame, dtype=np.float32).flatten()])
 
-            # ============================================================
-            # LIDAR BUFFER
-            # ============================================================
-
-            for lidar in self.lidar_buffer:
-
-                ret = np.hstack([
-                    ret,
-                    lidar
-                ])
-
-            if self.NUM_DRONES == 1:
-                return ret[0]
-
-            return ret
-            ############################################################
+            return flat_obs
         else:
-            print("[ERROR] in BaseRLAviary._computeObs()")
+            raise ValueError(f"[ERROR] Observation type {self.OBS_TYPE} not supported in _computeObs()")
