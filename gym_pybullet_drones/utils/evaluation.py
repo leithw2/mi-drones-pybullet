@@ -70,7 +70,7 @@ def make_eval_env(
     else:
         env = HoverAviary(
             drone_model=drone_model,
-            initial_xyzs=np.array([[0.0, 0.0, 1.0]]),
+            initial_xyzs=np.array([[0.0, 3.0, 1.0]]),
             initial_rpys=np.zeros((1, 3)),
             obs=obs,
             act=act,

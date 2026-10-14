@@ -82,6 +82,7 @@ class BaseAviary(gym.Env):
         self.PYB_STEPS_PER_CTRL = int(self.PYB_FREQ / self.CTRL_FREQ)
         self.CTRL_TIMESTEP = 1. / self.CTRL_FREQ
         self.PYB_TIMESTEP = 1. / self.PYB_FREQ
+        self._fpv_camera_state = None
         #### Parameters ############################################
         self.NUM_DRONES = num_drones
         self.NEIGHBOURHOOD_RADIUS = neighbourhood_radius
@@ -266,6 +267,7 @@ class BaseAviary(gym.Env):
 
         """
 
+        self._fpv_camera_state = None
         obstacle_body_ids = self._get_registered_obstacle_body_ids()
         if obstacle_body_ids:
             active_body_ids = {
@@ -317,6 +319,7 @@ class BaseAviary(gym.Env):
 
     def reset_preserving_bodies(self, seed=None, preserved_body_ids=()):
         """Reset an episode while keeping selected static PyBullet bodies."""
+        self._fpv_camera_state = None
         super().reset(seed=seed)
         self.step_count = 0
         self.wind_force = np.zeros(3)
@@ -390,7 +393,7 @@ class BaseAviary(gym.Env):
     
     ################################################################################
     def update_fpv_gui_camera(self, drone_id=0, offset_forward=-0.15):
-        """Coloca la cámara en la nariz del dron proyectando la posición objetivo hacia adelante."""
+        """Smoothly follow the drone with the FPV GUI camera."""
         pos, quat = p.getBasePositionAndOrientation(self.DRONE_IDS[drone_id], physicsClientId=self.CLIENT)
         rpy = p.getEulerFromQuaternion(quat)
 
@@ -403,14 +406,40 @@ class BaseAviary(gym.Env):
         # Nueva posición del objetivo ligeramente al frente del dron
         front_pos = np.array(pos) + forward_vec
 
-        pitch_deg = np.degrees(rpy[1])
-        yaw_deg = np.degrees(rpy[2])
+        target_pitch_deg = -np.degrees(rpy[1])
+        target_yaw_deg = np.degrees(rpy[2]) - 90
+        target_position = front_pos + np.array([0, 0, 0.05])
+
+        camera_state = self._fpv_camera_state
+        if camera_state is None:
+            smoothed_position = target_position
+            smoothed_yaw_deg = target_yaw_deg
+            smoothed_pitch_deg = target_pitch_deg
+        else:
+            current_position, current_yaw_deg, current_pitch_deg = camera_state
+            alpha = 1.0 - np.exp(-self.CTRL_TIMESTEP / 0.12)
+            yaw_delta = (
+                target_yaw_deg - current_yaw_deg + 180.0
+            ) % 360.0 - 180.0
+            smoothed_position = current_position + alpha * (
+                target_position - current_position
+            )
+            smoothed_yaw_deg = current_yaw_deg + alpha * yaw_delta
+            smoothed_pitch_deg = current_pitch_deg + alpha * (
+                target_pitch_deg - current_pitch_deg
+            )
+
+        self._fpv_camera_state = (
+            smoothed_position.copy(),
+            smoothed_yaw_deg,
+            smoothed_pitch_deg,
+        )
 
         p.resetDebugVisualizerCamera(
             cameraDistance=0.001,
-            cameraYaw=yaw_deg - 90,
-            cameraPitch=-pitch_deg,
-            cameraTargetPosition=front_pos+np.array([0, 0, 0.05]),
+            cameraYaw=smoothed_yaw_deg,
+            cameraPitch=smoothed_pitch_deg,
+            cameraTargetPosition=smoothed_position,
             physicsClientId=self.CLIENT
         )
 
@@ -447,7 +476,7 @@ class BaseAviary(gym.Env):
             in each subclass for its format.
 
         """
-        # self.update_fpv_gui_camera(0)
+        self.update_fpv_gui_camera(0)
         #### Save PNG video frames if RECORD=True and GUI=False ####
         if self.RECORD and not self.GUI and self.step_counter%self.CAPTURE_FREQ == 0:
             [w, h, rgb, dep, seg] = p.getCameraImage(width=self.VID_WIDTH,

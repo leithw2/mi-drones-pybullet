@@ -174,9 +174,9 @@ class BaseRLAviary(BaseAviary):
                     posz = lambda : 0
                 
                 self.posBo = [
-                    [4.4 + posx(), 4.2 + posy(), 1.0 + posz()],
-                    [4.4 + posx(), -4.4 + posy(), 1.0 + posz()],
-                    [-3.0 + posx(), -4.4 + posy(), 1.0 + posz()],
+                    [4.0 + posx(), 5.2 + posy(), 1.0 + posz()],
+                    [4.0 + posx(), -4.4 + posy(), 1.0 + posz()],
+                    [-2.5 + posx(), -5.4 + posy(), 1.0 + posz()],
                     [1.3 + posx(), -10.3 + posy(), 1.0 + posz()],
                 ]
                 self.moving_obstacle_centers = np.asarray(self.posBo, dtype=float)
@@ -188,9 +188,9 @@ class BaseRLAviary(BaseAviary):
                 create_cubes = self.OBSTACLE_TYPE in ("cubes", "moving_cubes")
                 for i, pos in enumerate(self.posBo if create_cubes else []):
                     if self.randomized :
-                        ancho = np.random.uniform(.2,.24)
-                        largo = np.random.uniform(.2,.24)
-                        alto  = np.random.uniform(1.5,2.7)
+                        ancho = np.random.uniform(.2,0.8)
+                        largo = np.random.uniform(.2,0.8)
+                        alto  = np.random.uniform(0.2,2.7)
                     else:
                         ancho = 0.05
                         largo = 0.05

@@ -76,7 +76,7 @@ DEFAULT_MA = False
 physics=Physics.PYB_WIND # Physics.PYB or Physics.PYB_CUSTOM or Physics.PYB_WIND
 # Start a fresh policy after changing the obstacle reward. Set this to a model
 # folder only when intentionally fine-tuning an existing policy.
-CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'Race09.28.2026_15.41.08')
+CONTINUE_FROM = os.path.join(DEFAULT_OUTPUT_FOLDER,'Small_Race10.09.2026_20.59.04')
 # CONTINUE_FROM = None
 RANDOM_TARGETS= False # True or False
 
@@ -130,7 +130,7 @@ def run(
         filename = continue_from
         print(f"[INFO] Continuando entrenamiento desde: {filename}")
     else:
-        filename = os.path.join(output_folder,'Race'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
+        filename = os.path.join(output_folder,'Small_Race'+datetime.now().strftime("%m.%d.%Y_%H.%M.%S"))
     if not os.path.exists(filename):
         os.makedirs(filename+'/')
         print(f"[INFO] Creando carpeta {filename}/")
@@ -217,10 +217,10 @@ def run(
     if continue_from and os.path.isfile(os.path.join(filename, 'final_model.zip')):
         print(f"[INFO] Cargando modelo guardado de {os.path.join(filename, 'final_model.zip')}")
         model = PPO.load(os.path.join(filename, 'final_model.zip'), env=train_env, device=DEVICE,
-        ent_coef = 0.05, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
-        target_kl= 0.2, # Aumentado para permitir más 
-        clip_range = 0.2, 
-        learning_rate = lambda p: 0.00005,
+        ent_coef = 0.003, # Aumentado para fomentar exploración y evitar colisiones, pero puede ralentizar la convergencia
+        target_kl= 0.08, # Aumentado para permitir más 
+        clip_range = 0.02, 
+        #learning_rate = lambda p: 0.00005,
         gamma=0.995,
         seed=0,
         )
@@ -241,7 +241,7 @@ def run(
                 gae_lambda=0.95, # Valor por defecto, buen compromiso entre bias y varianza
                 learning_rate = lambda p: 0.00005 + (0.0007 - 0.00005) * ((p - 0.25) / 0.75) if p > 0.25 else 0.00005,
                 policy_kwargs=dict(
-                    net_arch=[dict(pi=[256, 256, 128], vf=[256, 256, 128])],
+                    net_arch=[dict(pi=[64, 64], vf=[256, 256, 128])],
                     activation_fn=torch.nn.Tanh,
                     log_std_init=-2.0,
                     ortho_init=True,
@@ -304,7 +304,7 @@ def run(
     if DEFAULT_ACT == ActionType.ONE_D_RPM:
         target_reward = 474.15 if not multiagent else 949.5
     else:
-        target_reward = 1500 if not multiagent else 920.
+        target_reward = 3600 if not multiagent else 920.
     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=target_reward, verbose=1)
     eval_callback = EvalCallback(
         eval_env,

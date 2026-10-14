@@ -8,14 +8,16 @@ from gym_pybullet_drones.utils.powerloop_track import PowerloopTrack
 import matplotlib.pyplot as plt
 
 class HoverAviary(BaseRLAviary):
-    POWERLOOP_GATE_CROSSING_BONUS = 50.0
+    POWERLOOP_GATE_CROSSING_BONUS = 150.0
     POWERLOOP_MIN_GATE_HEADING_ALIGNMENT = 0.5
+    POWERLOOP_SPEED_REWARD_WEIGHT = 0.3
+    POWERLOOP_SPEED_LIMIT = 3.0
 
     
     
     def __init__(self,
                  drone_model: DroneModel=DroneModel.CF2X250,
-                 initial_xyzs=np.array([[0, 0, np.random.uniform(0.8, 2.5)]]),
+                 initial_xyzs=np.array([[0, 3, np.random.uniform(0.8, 2.5)]]),
                  initial_rpys=None,
                  physics: Physics=Physics.PYB,
                  pyb_freq: int = 240,
@@ -96,12 +98,14 @@ class HoverAviary(BaseRLAviary):
 
         self.rabbit_joystick = None
         self.verbose = 1
+    
         self.wrong_gate_cross = False
         self._prev_gate_plane_dists_dict = {}
+        self._gate_recovery_idx = None
         self.is_powerloop = False
                 
         if self.randomized :
-            initial_xyzs = np.array([[np.random.uniform(-0.8, 0.8),np.random.uniform(-0.8, 0.8), np.random.uniform(0.8, 1.5)]])
+            initial_xyzs = np.array([[np.random.uniform(-0.8, 0.8),np.random.uniform(-0.8, 0.8)+3, np.random.uniform(0.8, 1.5)]])
 
 
             
@@ -192,6 +196,41 @@ class HoverAviary(BaseRLAviary):
             )
 
             self._trajectory_ids.append(line_id)
+
+    def _update_presentation_hud(self):
+        if not self.GUI or not self.is_powerloop or not self.gate_data:
+            return
+        if self.step_counter - getattr(self, "_presentation_hud_last_step", -1) < max(
+            1, self.PYB_FREQ // 10
+        ):
+            return
+
+        gate_count = len(self.gate_data)
+        passed_gates = max(0, self.score - 1)
+        gate_index = self.current_gate_idx % gate_count
+        gate = self.gate_data[gate_index]
+        total_gates = getattr(self, "num_waypoints", gate_count)
+        progress = min(100, 100 * passed_gates / max(1, total_gates))
+        laps = max(1, int(np.ceil(total_gates / gate_count)))
+        lap = min(laps, passed_gates // gate_count + 1)
+        elapsed = self.step_counter / self.PYB_FREQ
+        drone_position = np.asarray(self.pos[0], dtype=float)
+        label_position = drone_position + np.array([0.0, 0.0, 0.35])
+        text = (
+            f"POWERLOOP  |  SCORE {self.score}  |  "
+            f"LAP {lap}/{laps}  |  GATE {gate_index + 1}/{gate_count}: "
+            f"{gate['name']}  |  {progress:.0f}%  |  {elapsed:.1f}s"
+        )
+        self._presentation_hud_id = p.addUserDebugText(
+            text,
+            label_position,
+            textColorRGB=[1.0, 1.0, 1.0],
+            textSize=1.4,
+            lifeTime=0,
+            replaceItemUniqueId=getattr(self, "_presentation_hud_id", -1),
+            physicsClientId=self.CLIENT,
+        )
+        self._presentation_hud_last_step = self.step_counter
             
     def reset(self, *args, **kwargs):
         seed = kwargs.get("seed")
@@ -205,23 +244,32 @@ class HoverAviary(BaseRLAviary):
 
         self.score = 1
         self.time_penalty = 0
+        self._prev_motor_u = None
+        self._prev2_motor_u = None
         self._prev_ang_vel = None
         self._probe_id = None
         self._probe_shape = None
         self.wrong_gate = False
         self._prev_gate_plane_dists_dict = {}
+        self._gate_recovery_idx = None
+        hud_id = getattr(self, "_presentation_hud_id", -1)
+        if hud_id >= 0 and self.GUI:
+            p.removeUserDebugItem(int(hud_id), physicsClientId=self.CLIENT)
+        self._presentation_hud_id = -1
+        self._presentation_hud_last_step = -1
 
         if hasattr(self, "track"):
             self.track.current_gate_idx = 0
+            self.track.update_gate_visuals()
         
         
         if self.randomized :
-            self.INIT_XYZS = np.array([[rng.uniform(-0.1, 0.1)+.8 ,rng.uniform(-0.1, 0.1) + 2, rng.uniform(0.8, 1.0)]])
+            self.INIT_XYZS = np.array([[rng.uniform(-0.1, 0.1) ,rng.uniform(-0.1, 0.1) + 2.5, rng.uniform(0.8, 2.5)]])
             self.INIT_XYZS[0, :2] *= self.track_scale
 
         # Habilitar orientación inicial aleatoria en Yaw
         if self.INIT_RPYS is not None:
-            self.INIT_RPYS[0, 2] = rng.uniform(-np.pi/6, np.pi/6)
+            self.INIT_RPYS[0, 2] = rng.uniform(-np.pi/4, np.pi/4)
             
 
         preserved_scene_ids = set(
@@ -269,8 +317,8 @@ class HoverAviary(BaseRLAviary):
         if benchmark:
             # Parametrización general: p va de 0.0 a 1.0
             if self.randomized:
-                Amplitudx = rng.uniform(1, 3)
-                Amplitudy = rng.uniform(1, 3)
+                Amplitudx = rng.uniform(4, 8)
+                Amplitudy = rng.uniform(4, 8)
             else: 
                 Amplitudx = 6.0
                 Amplitudy = 6.0
@@ -309,8 +357,8 @@ class HoverAviary(BaseRLAviary):
 
             elif not self.one_only_target and not self.random_targets:
                 # Opciones de benchmark, incluyendo el Powerloop Track
-                #benchmarks = [lemniscata_8, lemniscata_8_inv, "powerloop"]
-                #benchmark_names = ["Lemniscata 8", "Lemniscata 8 Invertida", "Powerloop Track"]
+                #benchmarks = [lemniscata_8, lemniscata_8_inv]
+                #benchmark_names = ["Lemniscata 8", "Lemniscata 8 Invertida"]
                 
                 benchmarks = ["powerloop"]
                 benchmark_names = ["Powerloop Track"]
@@ -618,6 +666,48 @@ class HoverAviary(BaseRLAviary):
 
         return self.lidar_risk_memory, safer_side
 
+    @staticmethod
+    def _gate_approach_risk_factor(position, gate_info, heading_alignment):
+        """Return how well the drone is aligned with the active gate approach."""
+        gate_position = np.asarray(gate_info["position"], dtype=np.float32)
+        gate_normal = np.asarray(
+            gate_info["normal"],
+            dtype=np.float32,
+        ).copy()
+        gate_normal /= np.linalg.norm(gate_normal) + 1e-8
+
+        approach_distance = float(
+            np.dot(gate_position - position, gate_normal)
+        )
+        if not 0.0 <= approach_distance <= 1.5:
+            return 0.0
+
+        lateral_axis = np.array(
+            [gate_normal[1], -gate_normal[0], 0.0],
+            dtype=np.float32,
+        )
+        lateral_offset = abs(
+            float(np.dot(position - gate_position, lateral_axis))
+        )
+        vertical_offset = abs(float(position[2] - gate_position[2]))
+        centering = float(np.exp(
+            -0.5 * (
+                (lateral_offset / 0.45) ** 2
+                + (vertical_offset / 0.45) ** 2
+            )
+        ))
+        heading = float(np.clip(
+            (heading_alignment - 0.5) / 0.5,
+            0.0,
+            1.0,
+        ))
+        distance = float(np.clip(
+            (1.5 - approach_distance) / 1.0,
+            0.0,
+            1.0,
+        ))
+        return distance * centering * heading
+
     def _computeReward(self):
         """Reward local orientado a seguir la trayectoria de forma suave y controlada."""
 
@@ -641,6 +731,33 @@ class HoverAviary(BaseRLAviary):
         ang_vel = rotation_matrix.T @ ang_vel_global
         roll, pitch = angles[0], angles[1]
         
+
+        recovering_gate_this_step = (
+            self.is_powerloop
+            and self._gate_recovery_idx == self.current_gate_idx
+        )
+        if recovering_gate_this_step:
+            recovery_gate = self.gate_data[self.current_gate_idx]
+            recovery_position = np.asarray(
+                recovery_gate["position"],
+                dtype=np.float32,
+            )
+            recovery_normal = np.asarray(
+                recovery_gate["normal"],
+                dtype=np.float32,
+            ).copy()
+            recovery_normal /= np.linalg.norm(recovery_normal) + 1e-8
+            recovery_plane_dist = float(
+                np.dot(pos - recovery_position, recovery_normal)
+            )
+            if recovery_plane_dist < 0.0:
+                self._gate_recovery_idx = None
+                self.TARGET_POS = recovery_position.copy()
+                self._prev_dist = None
+            else:
+                self.TARGET_POS = (
+                    recovery_position - 1.5 * recovery_normal
+                )
 
         delta_pos = self.TARGET_POS - pos
         dist = float(np.linalg.norm(delta_pos))
@@ -713,7 +830,15 @@ class HoverAviary(BaseRLAviary):
         # NUEVO: PROGRESO HACIA LA PUERTA
         # ============================================================
 
-        if self.is_powerloop and current_gate["type"] == "gate":
+        if recovering_gate_this_step:
+            forward_progress = float(
+                np.dot(vel, target_local)
+            )
+            heading_alignment = float(
+                np.clip(target_local[0], -1.0, 1.0)
+            )
+
+        elif self.is_powerloop and current_gate["type"] == "gate":
 
             # Velocidad global proyectada sobre la normal de la puerta.
             # Positivo = avanzando en el sentido correcto para atravesarla.
@@ -728,7 +853,10 @@ class HoverAviary(BaseRLAviary):
                 np.dot(vel[:2], target_xy)
             )
 
-        if self.is_powerloop and current_gate["type"] == "gate":
+        if recovering_gate_this_step:
+            forward_speed = max(forward_progress, 0.0)
+
+        elif self.is_powerloop and current_gate["type"] == "gate":
 
             forward_speed = float(
                 max(np.dot(vel, gate_normal_local ), 0.0)
@@ -749,6 +877,15 @@ class HoverAviary(BaseRLAviary):
         # ============================================================
 
         obstacle_risk, safer_side = self._get_obstacle_guidance(vel)
+        if self.is_powerloop and current_gate["type"] == "gate":
+            gate_approach_factor = self._gate_approach_risk_factor(
+                pos,
+                current_gate,
+                heading_alignment,
+            )
+            obstacle_risk *= 1.0 - 0.8 * gate_approach_factor
+
+        smoothness_weight = 1.0 - 0.75 * obstacle_risk
 
         collision_penalty = -0.5 * obstacle_risk
 
@@ -806,7 +943,7 @@ class HoverAviary(BaseRLAviary):
         # CONTROL DE VELOCIDAD MÁXIMA
         # ============================================================
 
-        target_speed_limit = 2.0
+        target_speed_limit = self.POWERLOOP_SPEED_LIMIT
 
         excess_speed = max(
             0.0,
@@ -827,7 +964,7 @@ class HoverAviary(BaseRLAviary):
         approach_reward = (
             8.0
             * max(progress, 0.0)
-            * (1.0 - 0.65 * obstacle_risk)
+            * (1.0 - 0.35 * obstacle_risk)
         )
 
         no_approach_penalty = 0.0
@@ -848,16 +985,31 @@ class HoverAviary(BaseRLAviary):
             no_approach_penalty -= 0.1
         no_approach_penalty *= reward_rate_scale
 
-        heading_reward = (
-            1.2
-            * max(heading_alignment, 0.0)
-            * max(0.0, 1.0 - dist / 8.0)
-        ) * reward_rate_scale
+        if self.is_powerloop:
+            heading_reward = (
+                1.2
+                * max(progress, 0.0)
+                * max(heading_alignment, 0.0)
+                * max(0.0, 1.0 - dist / 8.0)
+            )
+        else:
+            heading_reward = (
+                1.2
+                * max(heading_alignment, 0.0)
+                * max(0.0, 1.0 - dist / 8.0)
+            ) * reward_rate_scale
 
         speed_reward = (
             0.4
             * max(forward_progress, 0.0)
             * max(0.0, 1.0 - dist / 6.0)
+        ) * reward_rate_scale
+        forward_speed_reward = (
+            self.POWERLOOP_SPEED_REWARD_WEIGHT
+            * min(forward_speed, target_speed_limit)
+            * max(heading_alignment, 0.0)
+            * (1.0 - 0.5 * obstacle_risk)
+            * float(np.clip((dist - 0.75) / 1.5, 0.0, 1.0))
         ) * reward_rate_scale
 
         reverse_penalty = (
@@ -867,17 +1019,29 @@ class HoverAviary(BaseRLAviary):
 
         time_penalty = -0.003
 
-        action_now = np.asarray(
-            self.action,
-            dtype=np.float32
-        ).flatten()
-
+        motor_rpm = np.asarray(
+            self.last_clipped_action[0],
+            dtype=np.float32,
+        )
+        motor_u = np.clip(
+            motor_rpm / self.MAX_RPM,
+            0.0,
+            1.0,
+        )
         if (
-            not hasattr(self, "_prev_action")
-            or self._prev_action is None
-            or self._prev_action.shape != action_now.shape
+            not hasattr(self, "_prev_motor_u")
+            or self._prev_motor_u is None
+            or self._prev_motor_u.shape != motor_u.shape
         ):
-            self._prev_action = action_now.copy()
+            self._prev_motor_u = motor_u.copy()
+            self._prev2_motor_u = motor_u.copy()
+
+        delta_u = motor_u - self._prev_motor_u
+        acceleration_u = (
+            motor_u
+            - 2.0 * self._prev_motor_u
+            + self._prev2_motor_u
+        )
 
         if (
             not hasattr(self, "_prev_ang_vel")
@@ -890,21 +1054,40 @@ class HoverAviary(BaseRLAviary):
         # 1. SUAVIDAD DE ACCIÓN
         # ============================================================
 
-        action_delta = (
-            action_now - self._prev_action
-        )
+        energy_penalty = (
+            -0.04 * float(np.sum(motor_u ** 3))
+        ) * reward_rate_scale
 
         action_change_penalty = (
-            -0.25
-            * float(np.mean(action_delta ** 2))
-        )
+            -5.65 * float(np.sum(delta_u ** 2))
+        ) * smoothness_weight * reward_rate_scale
 
-        action_change_penalty = float(
-            np.clip(
-                action_change_penalty,
-                -0.6,
-                0.0
+        action_acceleration_penalty = (
+            -6.6 * float(np.sum(acceleration_u ** 2))
+        ) * smoothness_weight * reward_rate_scale
+
+        velocity_norm = float(np.linalg.norm(vel))
+        if velocity_norm > 1e-6:
+            counter_thrust_alignment = max(
+                0.0,
+                -float(vel[2] / velocity_norm),
             )
+        else:
+            counter_thrust_alignment = 0.0
+
+        drag_speed_weight = float(
+            np.clip((velocity_norm - 0.5) / 1.0, 0.0, 1.0)
+        )
+        drag_gate_weight = float(
+            np.clip((dist - 0.75) / 1.5, 0.0, 1.0)
+        )
+        drag_penalty = (
+            -0.05
+            * velocity_norm ** 2
+            * counter_thrust_alignment
+            * drag_speed_weight
+            * drag_gate_weight
+            * (1.0 - obstacle_risk)
         ) * reward_rate_scale
 
         # ============================================================
@@ -916,7 +1099,7 @@ class HoverAviary(BaseRLAviary):
         )
 
         jitter_penalty = (
-            -0.20
+            -5.6
             * float(
                 np.sum(angular_delta[:2] ** 2)
             )
@@ -925,10 +1108,10 @@ class HoverAviary(BaseRLAviary):
         jitter_penalty = float(
             np.clip(
                 jitter_penalty,
-                -0.8,
+                -5.9,
                 0.0
             )
-        ) * reward_rate_scale
+        ) * smoothness_weight * reward_rate_scale
 
         # ============================================================
         # 3. VELOCIDAD ANGULAR CONTINUA
@@ -985,8 +1168,19 @@ class HoverAviary(BaseRLAviary):
         # 5. RECOMPENSA POR ESTABILIDAD
         # ============================================================
 
-        attitude_error = np.sqrt(
-            roll ** 2 + pitch ** 2
+        cruise_pitch = np.deg2rad(15.0)
+        braking_pitch = np.deg2rad(-5.0)
+        cruise_weight = (
+            max(heading_alignment, 0.0)
+            * (1.0 - obstacle_risk)
+        )
+        desired_pitch = (
+            cruise_pitch * cruise_weight
+            + braking_pitch * obstacle_risk
+        )
+        attitude_error = np.hypot(
+            roll,
+            pitch - desired_pitch,
         )
 
         angular_activity = np.linalg.norm(
@@ -1021,8 +1215,9 @@ class HoverAviary(BaseRLAviary):
 
         bonus = 0.0
         wrong_direction_penalty = 0.0
+        gate_plane_progress_reward = 0.0
         gate_wait_penalty = 0
-        
+        waypoint_radius = 0.9
 
         if self.is_powerloop:
             # ============================================================
@@ -1087,7 +1282,6 @@ class HoverAviary(BaseRLAviary):
                 # ========================================================
                 # A. WAYPOINT VIRTUAL
                 # ========================================================
-                waypoint_radius = 1.5
                 if is_current_waypoint:
                     waypoint_dist = np.linalg.norm(pos - np.asarray(current_target_info["position"]))
 
@@ -1324,6 +1518,11 @@ class HoverAviary(BaseRLAviary):
                         and is_inside
                         and gate_velocity > 0.05
                     )
+                    crossed_plane_forward = (
+                        previous_plane_dist < 0.0
+                        and current_plane_dist >= 0.0
+                        and gate_velocity > 0.05
+                    )
 
                     # ====================================================
                     # CRUCE HACIA ATRÁS
@@ -1363,6 +1562,20 @@ class HoverAviary(BaseRLAviary):
                         not is_current_waypoint
                         and physical_idx == gate_idx_at_start
                     )
+
+                    if is_current_gate:
+                        if not recovering_gate_this_step:
+                            aperture_alignment = float(np.exp(
+                                -0.5 * (
+                                    (lateral_offset / 0.65) ** 2
+                                    + (vertical_offset / 0.65) ** 2
+                                )
+                            ))
+                            gate_plane_progress_reward = (
+                                4.0
+                                * (current_plane_dist - previous_plane_dist)
+                                * aperture_alignment
+                            )
                     
                     if self.verbose == 2:
                         print(
@@ -1383,6 +1596,21 @@ class HoverAviary(BaseRLAviary):
                         self.gate_inside = is_inside
                         gate_velocity_current = gate_velocity
 
+                        if crossed_plane_forward and not is_inside:
+                            self._gate_recovery_idx = gate_idx_at_start
+                            self.TARGET_POS = (
+                                gate_position_global
+                                - 1.5 * gate_normal_global
+                            )
+                            self._prev_dist = None
+                            recovering_gate_this_step = True
+                            gate_plane_progress_reward = 0.0
+                            if self.verbose >= 2:
+                                print(
+                                    "[GATE MISSED] Pasó fuera de la abertura; "
+                                    "regresando al lado de entrada."
+                                )
+
                         if crossing_forward and is_inside and gate_velocity > 0.1:
                             if gate_normal_local[0] >= self.POWERLOOP_MIN_GATE_HEADING_ALIGNMENT:
                                 if self.verbose >= 2:
@@ -1394,7 +1622,7 @@ class HoverAviary(BaseRLAviary):
                                 correct_crossing = True
                                 correct_crossing_physical_id = gate_pid
                             else:
-                                if self.verbose >= 1:
+                                if self.verbose >= 2:
                                     print(
                                         f"[WRONG GATE ORIENTATION] data_idx={physical_idx} "
                                         f"| physical_id={gate_pid} "
@@ -1405,8 +1633,6 @@ class HoverAviary(BaseRLAviary):
 
                         if (
                             crossing_backward
-                            and is_inside
-                            and gate_velocity < -0.1
                         ):
                             if self.verbose >= 2:
                                 print(
@@ -1475,6 +1701,7 @@ class HoverAviary(BaseRLAviary):
 
                     self.score += 1
                     bonus += self.POWERLOOP_GATE_CROSSING_BONUS
+                    self._gate_recovery_idx = None
 
                     next_gate_idx = (
                         gate_idx_at_start + 1
@@ -1483,6 +1710,11 @@ class HoverAviary(BaseRLAviary):
                     self.current_gate_idx = (
                         next_gate_idx
                     )
+                    if hasattr(self, "track"):
+                        self.track.current_gate_idx = (
+                            next_gate_idx % len(self.track.track_points)
+                        )
+                        self.track.update_gate_visuals()
 
                     if next_gate_idx < len(
                         self.gate_positions
@@ -1532,7 +1764,7 @@ class HoverAviary(BaseRLAviary):
             # OTROS BENCHMARKS: LÓGICA ORIGINAL
             # ============================================================
 
-            if dist < waypoint_radius and valid_speed and valid_direction:
+            if dist < waypoint_radius:
 
                 bonus = 30 + (self.score - 1) * 20
 
@@ -1583,14 +1815,19 @@ class HoverAviary(BaseRLAviary):
             base_reward
             + approach_reward
             + heading_reward
+            + gate_plane_progress_reward
             + speed_reward
+            + forward_speed_reward
             + reverse_penalty
             + no_approach_penalty
+            + energy_penalty
             + jitter_penalty
             + ang_vel_penalty
             + excess_speed_penalty
             + smooth_flight_reward
             + action_change_penalty
+            + action_acceleration_penalty
+            + drag_penalty
             + collision_penalty
             + braking_penalty
             + avoidance_reward
@@ -1605,14 +1842,19 @@ class HoverAviary(BaseRLAviary):
             print(f"base_reward:           {base_reward:.3f}")
             print(f"approach_reward:       {approach_reward:.3f}")
             print(f"heading_reward:        {heading_reward:.3f}")
+            print(f"gate_plane_progress:   {gate_plane_progress_reward:.3f}")
             print(f"speed_reward:          {speed_reward:.3f}")
+            print(f"forward_speed_reward:  {forward_speed_reward:.3f}")
             print(f"reverse_penalty:       {reverse_penalty:.3f}")
             print(f"no_approach_penalty:   {no_approach_penalty:.3f}")
+            print(f"energy_penalty:        {energy_penalty:.3f}")
             print(f"jitter_penalty:        {jitter_penalty:.3f}")
             print(f"ang_vel_penalty:       {ang_vel_penalty:.3f}")
             print(f"excess_speed_penalty:  {excess_speed_penalty:.3f}")
             print(f"smooth_flight_reward:  {smooth_flight_reward:.3f}")
             print(f"action_change_penalty: {action_change_penalty:.3f}")
+            print(f"action_accel_penalty:  {action_acceleration_penalty:.3f}")
+            print(f"drag_penalty:          {drag_penalty:.3f}")
             print(f"collision_penalty:     {collision_penalty:.3f}")
             print(f"braking_penalty:       {braking_penalty:.3f}")
             print(f"avoidance_reward:      {avoidance_reward:.3f}")
@@ -1627,6 +1869,9 @@ class HoverAviary(BaseRLAviary):
         total_reward += bonus
 
         self.actual_reward += total_reward
+        self._prev2_motor_u = self._prev_motor_u.copy()
+        self._prev_motor_u = motor_u.copy()
+        self._prev_ang_vel = ang_vel.copy()
 
         return total_reward
         
@@ -1829,7 +2074,7 @@ class HoverAviary(BaseRLAviary):
         """
         #print(self.time_penalty)
         
-        penalty = 200 / self.score # Penalización que disminuye a medida que se alcanzan más objetivos
+        penalty = 200.0 / max(self.score, 1)
         state = self._getDroneStateVector(0)
         vel = state[10:13]
         
@@ -1861,19 +2106,19 @@ class HoverAviary(BaseRLAviary):
             self.actual_reward = 0
             return True, penalty
         
-        if (abs(state[7]) > 1.7 or abs(state[8]) > 1.7):
+        # if (abs(state[7]) > 1.7 or abs(state[8]) > 1.7):
 
-            if self.verbose >= 1:
-                print(
-                    "tilted - accumulated reward: "
-                    + str(self.actual_reward)
-                )
-                print("score", self.score)
-                print("step counter", self.step_counter)
+        #     if self.verbose >= 1:
+        #         print(
+        #             "tilted - accumulated reward: "
+        #             + str(self.actual_reward)
+        #         )
+        #         print("score", self.score)
+        #         print("step counter", self.step_counter)
 
-            self.actual_reward = 0
+        #     self.actual_reward = 0
 
-            return True, penalty
+        #     return True, penalty
         
         if state[2] < 0.02:
             #print(  f"Truncated height: pos {state[0:3]}, angles {state[7:10]}")
@@ -1907,7 +2152,7 @@ class HoverAviary(BaseRLAviary):
                             
                 print(
                     "obstacle collision - accumulated reward: "
-                    + str(self.actual_reward)
+                    + str(self.actual_reward-penalty)
                 )
 
                 print("score", self.score)
@@ -1918,12 +2163,13 @@ class HoverAviary(BaseRLAviary):
             return True, penalty
         
         if self.wrong_gate_cross:
+            wrong_gate_penalty = 25.0
         
             if self.verbose >=1:
                             
                 print(
                     "wrong_gate_cross - accumulated reward: "
-                    + str(self.actual_reward)
+                    + str(self.actual_reward-wrong_gate_penalty)
                 )
 
                 print("score", self.score)
@@ -1931,7 +2177,7 @@ class HoverAviary(BaseRLAviary):
 
             self.actual_reward = 0
             self.wrong_gate_cross = False
-            return True, penalty
+            return True, wrong_gate_penalty
         
         if np.linalg.norm(self.TARGET_POS-state[0:3]) < .001:
             #print("target reached - reward: "  + str(self.actual_reward - penalty))

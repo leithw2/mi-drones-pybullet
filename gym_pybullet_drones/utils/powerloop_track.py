@@ -212,8 +212,8 @@ class PowerloopTrack:
     def create_gate(self, x, y, z, yaw, name, gate_idx):
         """Construye un gate de 4 barras, registrando partes activas y estáticas."""
         half = self.GATE_SIZE / 2
-        front_offset = -self.FRAME_DEPTH / 2 + 0.01
         front_thickness = 0.02
+        front_offset = -self.FRAME_DEPTH / 2 - front_thickness / 2 - 0.02
 
         horizontal_front = (self.GATE_SIZE + 2 * self.FRAME_THICKNESS, front_thickness, self.FRAME_THICKNESS)
         vertical_front = (self.FRAME_THICKNESS, front_thickness, self.GATE_SIZE)
